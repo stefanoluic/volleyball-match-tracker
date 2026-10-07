@@ -1,0 +1,18 @@
+# Local configuration
+.env
+.env.*
+!.env.example
+
+# Build output and dependencies
+backend/target/
+frontend/node_modules/
+frontend/dist/
+frontend/*.tsbuildinfo
+
+# Editors and local logs
+.idea/
+.vscode/
+*.iml
+*.log
+.DS_Store
+Thumbs.db
