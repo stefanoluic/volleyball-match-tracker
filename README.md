@@ -9,7 +9,7 @@ authentication, statistics and reporting will be implemented next.
 
 - Java 21, Spring Boot 4.1.1, Maven
 - PostgreSQL 18, Spring Data JPA, Flyway
-- React 19, TypeScript, Vite
+- React 19, TypeScript, Vite, Mantine UI
 - Docker Compose for the development database
 
 ## Run locally
@@ -88,3 +88,13 @@ the first container initialization does not change the existing database passwor
 Flyway manages versioned SQL files in `backend/src/main/resources/db/migration`.
 The first migration creates the `volleyball` application schema. Hibernate
 validates the schema rather than creating or modifying tables.
+
+## Frontend styling
+
+Mantine provides the shared UI components. Its styles and `MantineProvider` are
+loaded in `frontend/src/main.tsx`, which also sets the primary color and default
+border radius. The setup screen uses Mantine components; application-specific
+styles belong in `frontend/src/styles.css` or component CSS modules.
+
+`frontend/postcss.config.cjs` configures Mantine's CSS preset and breakpoint
+variables. Form, notification and chart packages are not installed yet.

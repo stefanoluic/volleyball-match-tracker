@@ -1,3 +1,4 @@
+import { Badge, Button, Container, Group, Loader, Paper, Stack, Text, Title } from '@mantine/core';
 import { useEffect, useState } from 'react';
 
 type ConnectionState = 'checking' | 'ready' | 'unavailable';
@@ -43,29 +44,63 @@ export function App() {
   }, [attempt]);
 
   return (
-    <main className="setup-page">
-      <p className="eyebrow">Volleyball Match Tracker</p>
-      <h1>Projekat je postavljen.</h1>
-      <p>Početna provera veze između React aplikacije, backenda i baze.</p>
+    <Container component="main" size="sm" className="setup-page">
+      <Stack gap="xl">
+        <Stack gap="sm">
+          <Text size="sm" fw={600} c="dimmed">Volleyball Match Tracker</Text>
+          <Title order={1}>Projekat je postavljen.</Title>
+          <Text c="dimmed">
+            Početna provera veze između React aplikacije, backenda i baze.
+          </Text>
+        </Stack>
 
-      <section className="connection-card" aria-labelledby="connection-heading">
-        <h2 id="connection-heading">Status povezivanja</h2>
-        <p role="status" className={`connection-status ${connection}`}>
-          {connection === 'checking' && 'Provera je u toku…'}
-          {connection === 'ready' && 'React → Spring Boot → PostgreSQL: veza radi.'}
-          {connection === 'unavailable' &&
-            'Veza nije dostupna. Proveri da li su backend i baza pokrenuti.'}
-        </p>
-        <button
-          type="button"
-          disabled={connection === 'checking'}
-          onClick={() => setAttempt((current) => current + 1)}
+        <Paper
+          component="section"
+          withBorder
+          shadow="xs"
+          p="xl"
+          aria-labelledby="connection-heading"
         >
-          Proveri ponovo
-        </button>
-      </section>
+          <Stack gap="lg">
+            <Group justify="space-between">
+              <Title order={2} size="h3" id="connection-heading">
+                Status povezivanja
+              </Title>
+              <Badge
+                color={connection === 'ready' ? 'green' : connection === 'unavailable' ? 'red' : 'gray'}
+              >
+                {connection === 'checking' ? 'Provera' : connection === 'ready' ? 'Povezano' : 'Nedostupno'}
+              </Badge>
+            </Group>
 
-      <p className="note">Ovo je tehnička početna stranica. Ekrani aplikacije slede.</p>
-    </main>
+            <div role="status">
+              <Group gap="sm" wrap="nowrap" align="flex-start">
+                {connection === 'checking' && <Loader size="sm" aria-hidden="true" />}
+                <Text c={connection === 'unavailable' ? 'red.8' : undefined}>
+                  {connection === 'checking' && 'Provera je u toku…'}
+                  {connection === 'ready' && 'React → Spring Boot → PostgreSQL: veza radi.'}
+                  {connection === 'unavailable' &&
+                    'Veza nije dostupna. Proveri da li su backend i baza pokrenuti.'}
+                </Text>
+              </Group>
+            </div>
+
+            <Group>
+              <Button
+                loading={connection === 'checking'}
+                disabled={connection === 'checking'}
+                onClick={() => setAttempt((current) => current + 1)}
+              >
+                Proveri ponovo
+              </Button>
+            </Group>
+          </Stack>
+        </Paper>
+
+        <Text size="sm" c="dimmed">
+          Ovo je tehnička početna stranica. Ekrani aplikacije slede.
+        </Text>
+      </Stack>
+    </Container>
   );
 }
