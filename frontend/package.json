@@ -4,29 +4,37 @@
   "version": "0.1.0",
   "type": "module",
   "engines": {
-    "node": ">=22.12.0"
+    "node": "^22.22.2 || ^24.15.0 || >=26.0.0"
   },
   "scripts": {
     "dev": "vite --host 127.0.0.1",
     "check": "tsc -b",
+    "test": "node --experimental-transform-types --test tests/*.test.mjs && vitest run",
+    "test:ui": "vitest run",
     "build": "tsc -b && vite build",
     "preview": "vite preview --host 127.0.0.1"
   },
   "dependencies": {
     "@mantine/core": "9.7.1",
     "@mantine/hooks": "9.7.1",
+    "@mantine/notifications": "9.7.1",
+    "@tabler/icons-react": "3.49.0",
     "react": "19.3.0",
     "react-dom": "19.3.0"
   },
   "devDependencies": {
+    "@testing-library/react": "16.3.3",
+    "@testing-library/user-event": "14.6.7",
     "@types/node": "26.6.4",
     "@types/react": "19.3.0",
     "@types/react-dom": "19.3.0",
     "@vitejs/plugin-react": "6.1.2",
+    "jsdom": "30.1.2",
     "postcss": "8.5.29",
     "postcss-preset-mantine": "1.18.0",
     "postcss-simple-vars": "7.0.1",
     "typescript": "5.9.3",
-    "vite": "8.3.3"
+    "vite": "8.3.3",
+    "vitest": "5.0.3"
   }
 }

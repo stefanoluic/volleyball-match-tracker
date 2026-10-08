@@ -3,11 +3,98 @@
   text-rendering: optimizeLegibility;
   -webkit-font-smoothing: antialiased;
 }
-
-body {
-  background: var(--mantine-color-gray-0);
+body { background: #f4f6fa; }
+.brand { display: flex; align-items: center; gap: .75rem; }
+.brand-mark {
+  display: grid; place-items: center; width: 2.7rem; height: 2.7rem;
+  flex-shrink: 0; color: white; background: #193d68; border-radius: .9rem;
 }
-
-.setup-page {
-  padding-block: clamp(2rem, 10vh, 6rem);
+.brand-copy { font-size: 1rem; font-weight: 750; letter-spacing: -.03em; line-height: 1.15; }
+.brand-copy > span { display: block; font-size: .73rem; font-weight: 500; letter-spacing: .04em; margin-top: .25rem; }
+.auth-layout {
+  min-height: 100svh; display: flex; justify-content: center;
+  align-items: center; padding: clamp(1rem, 3vw, 3rem);
+}
+.auth-shell {
+  width: 100%; max-width: 1060px; min-width: 0; display: grid;
+  grid-template-columns: .95fr 1.05fr; background: white;
+  border: 1px solid #e3e9f1; border-radius: 1.5rem; overflow: hidden;
+  box-shadow: 0 18px 55px rgba(22,45,78,.08);
+}
+.auth-intro {
+  align-self: stretch; position: relative; overflow: hidden; min-height: 620px;
+  display: flex; flex-direction: column; justify-content: space-between;
+  padding: clamp(1.75rem, 3.5vw, 3rem); gap: 2rem;
+  color: white; background: linear-gradient(145deg, #142e50, #193d68 65%, #1b526d);
+}
+.auth-intro .brand-mark { background: rgba(255,255,255,.1); color: #bcf0f3; }
+.intro-copy { max-width: 440px; position: relative; z-index: 1; }
+.intro-copy h1 {
+  font-size: clamp(2.6rem, 4.5vw, 4rem); line-height: 1.06; letter-spacing: -.045em;
+  margin: 1.25rem 0; color: white;
+}
+.intro-description { color: #c7d7e9; }
+.intro-footer { color: #c7d7e9; position: relative; z-index: 1; }
+.court-illustration {
+  display: block; width: 100%; max-width: 330px; height: auto;
+  align-self: center; color: #a6e6eb; opacity: .42; margin: .25rem 0;
+}
+.auth-form-area {
+  display: flex; align-items: center; justify-content: center; min-width: 0;
+  padding: clamp(1.75rem, 3.5vw, 3rem);
+}
+.auth-card { width: 100%; max-width: 440px; }
+.auth-card h2 { letter-spacing: -.03em; }
+.auth-card .mantine-Tabs-tab { padding-top: .85rem; padding-bottom: .85rem; font-weight: 600; }
+.auth-card .mantine-InputWrapper-label { font-size: .875rem; margin-bottom: .3rem; }
+.app-header { background: white; border-bottom: 1px solid #e3e9f1; }
+.dashboard { min-height: 100vh; }
+.page-heading h1 { letter-spacing: -.035em; color: #19334f; }
+.accounts-panel { border-color: #e3e9f1; box-shadow: 0 4px 20px rgba(22,45,78,.025); overflow: hidden; }
+.accounts-toolbar {
+  display: flex; align-items: center; justify-content: space-between;
+  gap: 1rem; padding: 1.25rem; border-bottom: 1px solid #e9edf4;
+}
+.status-tabs { gap: .35rem; }
+.status-tabs .mantine-Tabs-tab { font-weight: 600; border-radius: .55rem; }
+.status-tabs .mantine-Tabs-tab[data-active] { color: #204f87; background: #edf4ff; }
+.accounts-content { padding: .75rem 1.25rem; }
+.accounts-table th { color: #68778b; font-size: .74rem; font-weight: 600; background: #f8fafc; }
+.accounts-table td { border-color: #edf0f5; }
+.user-identity { min-width: 0; overflow-wrap: anywhere; }
+.accounts-mobile { display: none; }
+.accounts-pagination { border-top: 1px solid #e9edf4; padding: 1rem 1.25rem; }
+.admin-help { color: #8291a3; padding: 0 .25rem; }
+.admin-help > svg { flex-shrink: 0; }
+.confirmation-email { overflow-wrap: anywhere; }
+@media (max-width: 62em) {
+  .accounts-toolbar { align-items: flex-start; }
+  .status-tabs { gap: .15rem; }
+  .status-tabs .mantine-Tabs-tab { padding: .65rem .6rem; }
+}
+@media (max-width: 48em) {
+  .auth-layout { padding: 1rem; }
+  .auth-shell { grid-template-columns: 1fr; max-width: 540px; border-radius: 1.25rem; }
+  .auth-intro { min-height: auto; padding: 1.5rem; gap: 1.5rem; }
+  .auth-form-area { padding: 1.5rem; }
+  .intro-copy h1 { font-size: 2.25rem; margin: 1rem 0 .75rem; }
+  .intro-roles, .auth-intro .court-illustration, .intro-footer { display: none; }
+  .auth-card { max-width: none; }
+  .header-account-name { display: none; }
+  .header-account { gap: .5rem; }
+  .app-header .brand-mark { width: 2.2rem; height: 2.2rem; }
+  .app-header .brand-copy { font-size: .9rem; }
+  .accounts-toolbar { flex-wrap: wrap; padding: 1rem; gap: .75rem; }
+  .accounts-toolbar > .mantine-Tabs-root { width: 100%; }
+  .status-tabs { flex-wrap: nowrap; justify-content: space-between; }
+  .status-tabs .mantine-Tabs-tab { font-size: .77rem; padding: .6rem .4rem; }
+  .status-tabs .mantine-Tabs-tabSection { display: none; }
+  .accounts-content { padding: 1rem; }
+  .accounts-desktop { display: none; }
+  .accounts-mobile { display: flex; }
+  .accounts-pagination { padding: 1rem; }
+  .page-heading { gap: .75rem; }
+}
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation-duration: .01ms !important; transition-duration: .01ms !important; }
 }
