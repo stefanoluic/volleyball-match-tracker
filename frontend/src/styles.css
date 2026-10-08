@@ -67,6 +67,9 @@ body { background: #f4f6fa; }
 .admin-help { color: #8291a3; padding: 0 .25rem; }
 .admin-help > svg { flex-shrink: 0; }
 .confirmation-email { overflow-wrap: anywhere; }
+.team-card, .teams-empty { border-color: #e3e9f1; box-shadow: 0 4px 20px rgba(22,45,78,.025); }
+.team-name, .team-city { overflow-wrap: anywhere; }
+.team-card .mantine-Group-root > svg { flex-shrink: 0; }
 @media (max-width: 62em) {
   .accounts-toolbar { align-items: flex-start; }
   .status-tabs { gap: .15rem; }

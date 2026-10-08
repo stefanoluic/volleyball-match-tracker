@@ -34,6 +34,6 @@ public class GlobalExceptionHandler {
     @ExceptionHandler(DataIntegrityViolationException.class)
     ResponseEntity<ApiError> handleConflict(DataIntegrityViolationException exception) {
         return ResponseEntity.status(HttpStatus.CONFLICT)
-                .body(new ApiError("Podaci su u sukobu sa postojećim nalogom. Proverite mejl adresu."));
+                .body(new ApiError("Podaci su u sukobu sa postojećim zapisom."));
     }
 }

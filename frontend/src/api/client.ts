@@ -27,6 +27,25 @@ export interface Registration {
   role: 'STATISTICIAN' | 'COACH';
 }
 
+export interface Team {
+  id: string;
+  name: string;
+  city: string;
+  createdAt: string;
+}
+
+export interface TeamInput {
+  name: string;
+  city: string;
+}
+
+export interface TeamPage {
+  content: Team[];
+  page: number;
+  totalPages: number;
+  totalElements: number;
+}
+
 export class ApiError extends Error {
   constructor(
     message: string,
@@ -52,7 +71,7 @@ async function get<T>(path: string, signal?: AbortSignal, notifyOnUnauthorized =
   return readResponse<T>(await fetch(path, { credentials: 'same-origin', signal }), path, notifyOnUnauthorized);
 }
 
-async function mutate<T>(method: 'POST' | 'DELETE', path: string, body?: object | URLSearchParams): Promise<T> {
+async function mutate<T>(method: 'POST' | 'PUT' | 'DELETE', path: string, body?: object | URLSearchParams): Promise<T> {
   // Fetch a fresh masked CSRF token, including after login/logout token rotation.
   const csrf = await get<{ headerName: string; token: string }>('/api/auth/csrf');
   const form = body instanceof URLSearchParams;
@@ -86,6 +105,11 @@ export const api = {
   approve: (id: string) => post<User>('/api/admin/users/' + id + '/approve'),
   block: (id: string) => post<User>('/api/admin/users/' + id + '/block'),
   deleteUser: (id: string) => mutate<void>('DELETE', '/api/admin/users/' + id),
+  teams: (page: number, signal?: AbortSignal) =>
+    get<TeamPage>('/api/teams?' + new URLSearchParams({ page: String(page), size: '20' }), signal),
+  createTeam: (data: TeamInput) => post<Team>('/api/teams', data),
+  updateTeam: (id: string, data: TeamInput) => mutate<Team>('PUT', '/api/teams/' + id, data),
+  deleteTeam: (id: string) => mutate<void>('DELETE', '/api/teams/' + id),
 };
 
 export function errorMessage(error: unknown): string {

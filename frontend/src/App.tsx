@@ -1,11 +1,13 @@
-import { Alert, Avatar, Badge, Button, Center, Container, Group, Loader, Paper, Stack, Text, ThemeIcon, Title } from '@mantine/core';
+import { Alert, Avatar, Button, Center, Container, Group, Loader, Stack, Text } from '@mantine/core';
 import { notifications } from '@mantine/notifications';
-import { IconAlertCircle, IconBallVolleyball, IconLogout, IconShieldCheck } from '@tabler/icons-react';
-import { useEffect, useState } from 'react';
+import { IconAlertCircle, IconLogout } from '@tabler/icons-react';
+import { lazy, Suspense, useEffect, useState } from 'react';
 import { api, ApiError, errorMessage, roleLabels, type User } from './api/client';
 import { AuthPage } from './auth/AuthPage';
-import { AdminUsersPage } from './admin/AdminUsersPage';
 import { Brand } from './components/Brand';
+
+const AdminUsersPage = lazy(() => import('./admin/AdminUsersPage').then(({ AdminUsersPage }) => ({ default: AdminUsersPage })));
+const TeamsPage = lazy(() => import('./teams/TeamsPage').then(({ TeamsPage }) => ({ default: TeamsPage })));
 
 export function App() {
   const [user, setUser] = useState<User | null>(null);
@@ -87,15 +89,9 @@ export function App() {
       <Container component="main" size="lg" py="xl">
         <Stack gap="lg">
           {error && <Alert color="red" icon={<IconAlertCircle size={19} />} role="alert" withCloseButton onClose={() => setError('')}>{error}</Alert>}
-          {user.role === 'ADMIN' ? <AdminUsersPage /> : (
-            <Paper withBorder p="xl" radius="lg"><Stack align="flex-start">
-              <ThemeIcon color="blue" variant="light" size={58} radius="lg"><IconBallVolleyball size={32} aria-hidden="true" /></ThemeIcon>
-              <Badge color="teal" variant="light" leftSection={<IconShieldCheck size={13} aria-hidden="true" />}>Aktivan nalog</Badge>
-              <Title order={1} size="h2">Dobro došli, {user.firstName}.</Title>
-              <Text c="dimmed">Prijavljeni ste kao: {roleLabels[user.role]}.</Text>
-              <Text>Vaš nalog je odobren. Funkcionalnosti za praćenje utakmica dodajemo u narednim koracima.</Text>
-            </Stack></Paper>
-          )}
+          <Suspense fallback={<Center py="xl"><Loader aria-label="Učitavanje stranice" /></Center>}>
+            {user.role === 'ADMIN' ? <AdminUsersPage /> : <TeamsPage canManage={user.role === 'STATISTICIAN'} />}
+          </Suspense>
         </Stack>
       </Container>
     </div>

@@ -3,8 +3,8 @@
 A web application for recording volleyball match events and displaying statistics to coaching staff.
 
 The application supports registration, session-based login/logout, administrator
-approval, blocking and permanent deletion of blocked user accounts. Match tracking, statistics and reporting
-are not implemented yet.
+approval, blocking and permanent deletion of blocked user accounts, and team
+management. Players, match tracking, statistics and reporting are not implemented yet.
 
 ## Stack
 
@@ -75,7 +75,8 @@ npm run build
 ```
 
 Backend tests cover bootstrap, hashing, registration, validation, account status,
-authorization, CSRF, session ID rotation, blocking, permanent deletion and logout. Integration tests
+authorization, CSRF, session ID rotation, blocking, permanent deletion, logout,
+and team CRUD, validation and role-based access. Integration tests
 require Docker and use a separate temporary PostgreSQL container through
 Testcontainers. They do not modify the development database or its admin account.
 The first run may download the Testcontainers cleanup image.
@@ -105,6 +106,9 @@ to the supported statuses: `PENDING`, `ACTIVE`, `BLOCKED` and `REJECTED`.
 The interface uses pending, active and blocked states; rejected is retained for
 compatibility with the initial schema.
 
+The fourth migration creates volleyball.teams with a UUID, name, city and creation
+time. A unique index on lower(name) and lower(city) prevents case-insensitive duplicates.
+
 ## Accounts and sessions
 
 - Public registration accepts only `STATISTICIAN` or `COACH`, always as `PENDING`.
@@ -122,8 +126,8 @@ compatibility with the initial schema.
   30 minutes of inactivity; restarting the backend clears them.
 - Session cookies are HttpOnly and SameSite=Lax. Local HTTP uses non-Secure cookies;
   for HTTPS deployment set `SERVER_SERVLET_SESSION_COOKIE_SECURE=true`.
-- CSRF protection is enabled for registration, login, logout and admin changes.
-  The frontend obtains a masked token before each POST or DELETE and sends its specified
+- CSRF protection is enabled for registration, login, logout, admin changes and team changes.
+  The frontend obtains a masked token before each POST, PUT or DELETE and sends its specified
   header. No JWTs, localStorage credentials or permissive CORS are used.
 - Password hashes are never included in API responses. Login failures use a
   generic message for invalid credentials and unapproved/blocked accounts.
@@ -143,11 +147,32 @@ compatibility with the initial schema.
 | DELETE | /api/admin/users/{id} | Admin, CSRF required; blocked non-admin accounts only |
 
 The admin list is paginated, newest first. Approval also reactivates a previously
-blocked account. Ordinary users currently see only their authenticated account
-screen, until match features are implemented.
+blocked account. Statisticians and coaching staff see the team list after signing in.
 
 This is a local development version. Public deployment additionally needs HTTPS,
 abuse/rate limiting, password recovery and operational configuration.
+
+## Teams
+
+- Statisticians can list, create, edit and permanently delete teams.
+- Coaching staff can list teams and view their data, but cannot change them.
+- Administrators currently manage accounts only and have no access to team endpoints.
+- Name and city are required, trimmed, Unicode-normalized and limited to 100 characters.
+- The same name/city combination cannot be registered twice, ignoring case.
+- The interface confirms deletion and preserves entered data on a failed save.
+- Lists are paginated (20 per page in the interface), sorted by name and identifier.
+- All teams are shared within this application; separate club membership is not implemented.
+
+| Method | Path | Access |
+| --- | --- | --- |
+| GET | /api/teams | Active statistician or coach; optional page and size |
+| GET | /api/teams/{id} | Active statistician or coach |
+| POST | /api/teams | Active statistician, CSRF required |
+| PUT | /api/teams/{id} | Active statistician, CSRF required |
+| DELETE | /api/teams/{id} | Active statistician, CSRF required |
+
+Players and matches are not yet linked to teams. Before implementing those
+relationships, deletion rules must be extended to protect referenced teams.
 
 ## Initial administrator
 

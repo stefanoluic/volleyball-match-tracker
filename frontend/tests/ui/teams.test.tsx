@@ -1,0 +1,137 @@
+import { MantineProvider } from '@mantine/core';
+import { notifications } from '@mantine/notifications';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
+import { afterEach, beforeEach, expect, test, vi } from 'vitest';
+import { api, ApiError, type Team } from '../../src/api/client';
+import { TeamsPage } from '../../src/teams/TeamsPage';
+import { theme } from '../../src/theme';
+
+const team: Team = { id: 'team-id', name: 'OK Vojvodina', city: 'Novi Sad', createdAt: '2026-10-08T10:00:00Z' };
+const populated = { content: [team], page: 0, totalPages: 1, totalElements: 1 };
+const empty = { content: [], page: 0, totalPages: 0, totalElements: 0 };
+
+function renderPage(canManage = true) {
+  return render(<MantineProvider theme={theme} env="test"><TeamsPage canManage={canManage} /></MantineProvider>);
+}
+
+beforeEach(() => {
+  vi.spyOn(api, 'teams').mockResolvedValue(populated);
+  vi.spyOn(notifications, 'show').mockReturnValue('test-notification');
+});
+afterEach(() => vi.restoreAllMocks());
+
+test('coaching staff can view teams but has no mutation controls', async () => {
+  renderPage(false);
+  const card = await screen.findByRole('article', { name: team.name });
+  expect(within(card).getByText(team.city)).toBeTruthy();
+  expect(screen.queryByRole('button', { name: 'Dodaj tim' })).toBeNull();
+  expect(screen.queryByRole('button', { name: 'Izmeni' })).toBeNull();
+  expect(screen.queryByRole('button', { name: 'Obriši' })).toBeNull();
+  expect(screen.getByText('Pristup za pregled')).toBeTruthy();
+});
+
+test('statistician adds a team and the list refreshes', async () => {
+  const user = userEvent.setup();
+  const create = vi.spyOn(api, 'createTeam').mockResolvedValue(team);
+  renderPage();
+  await screen.findByRole('article');
+  await user.click(screen.getByRole('button', { name: 'Dodaj tim' }));
+  const dialog = screen.getByRole('dialog', { name: 'Novi tim' });
+  await user.type(within(dialog).getByLabelText(/^Naziv tima/), ' New team ');
+  await user.type(within(dialog).getByLabelText(/^Grad/), ' Beograd ');
+  await user.click(within(dialog).getByRole('button', { name: 'Sačuvaj tim' }));
+  await waitFor(() => expect(create).toHaveBeenCalledExactlyOnceWith({ name: 'New team', city: 'Beograd' }));
+  await waitFor(() => expect(api.teams).toHaveBeenCalledTimes(2));
+  expect(notifications.show).toHaveBeenCalledWith(expect.objectContaining({ title: 'Tim je dodat', role: 'status' }));
+});
+
+test('blank fields are rejected inline without an API write', async () => {
+  const user = userEvent.setup();
+  const create = vi.spyOn(api, 'createTeam');
+  renderPage();
+  await screen.findByRole('article');
+  await user.click(screen.getByRole('button', { name: 'Dodaj tim' }));
+  await user.click(screen.getByRole('button', { name: 'Sačuvaj tim' }));
+  expect(screen.getByText('Unesite naziv tima.')).toBeTruthy();
+  expect(screen.getByText('Unesite grad.')).toBeTruthy();
+  expect(create).not.toHaveBeenCalled();
+});
+
+test('editing prefills the current values and sends a PUT through the API', async () => {
+  const user = userEvent.setup();
+  const update = vi.spyOn(api, 'updateTeam').mockResolvedValue({ ...team, city: 'Beograd' });
+  renderPage();
+  await screen.findByRole('article');
+  await user.click(screen.getByRole('button', { name: 'Izmeni' }));
+  const dialog = screen.getByRole('dialog', { name: 'Izmena tima' });
+  expect((within(dialog).getByLabelText(/^Naziv tima/) as HTMLInputElement).value).toBe(team.name);
+  const city = within(dialog).getByLabelText(/^Grad/);
+  await user.clear(city);
+  await user.type(city, 'Beograd');
+  await user.click(within(dialog).getByRole('button', { name: 'Sačuvaj izmene' }));
+  await waitFor(() => expect(update).toHaveBeenCalledExactlyOnceWith(team.id, { name: team.name, city: 'Beograd' }));
+});
+
+test('duplicate errors stay inside the editor and keep the entered data', async () => {
+  const user = userEvent.setup();
+  vi.spyOn(api, 'createTeam').mockRejectedValue(new ApiError('Tim sa ovim nazivom i gradom već postoji.', 409));
+  renderPage();
+  await screen.findByRole('article');
+  await user.click(screen.getByRole('button', { name: 'Dodaj tim' }));
+  const dialog = screen.getByRole('dialog', { name: 'Novi tim' });
+  fireEvent.change(within(dialog).getByLabelText(/^Naziv tima/), { target: { value: team.name } });
+  fireEvent.change(within(dialog).getByLabelText(/^Grad/), { target: { value: team.city } });
+  await user.click(within(dialog).getByRole('button', { name: 'Sačuvaj tim' }));
+  await within(dialog).findByText('Tim sa ovim nazivom i gradom već postoji.');
+  expect(screen.getByRole('dialog')).toBeTruthy();
+  expect((within(dialog).getByLabelText(/^Naziv tima/) as HTMLInputElement).value).toBe(team.name);
+  expect(notifications.show).not.toHaveBeenCalled();
+});
+
+test('deletion can be cancelled and only confirmation calls the API', async () => {
+  const user = userEvent.setup();
+  const remove = vi.spyOn(api, 'deleteTeam').mockResolvedValue();
+  renderPage();
+  await screen.findByRole('article');
+  await user.click(screen.getByRole('button', { name: 'Obriši' }));
+  let dialog = screen.getByRole('dialog', { name: 'Brisanje tima' });
+  expect(within(dialog).getByText(/nije moguće poništiti/)).toBeTruthy();
+  expect(remove).not.toHaveBeenCalled();
+  await user.click(within(dialog).getByRole('button', { name: 'Odustani' }));
+  await user.click(screen.getByRole('button', { name: 'Obriši' }));
+  dialog = screen.getByRole('dialog', { name: 'Brisanje tima' });
+  vi.mocked(api.teams).mockResolvedValue(empty);
+  await user.click(within(dialog).getByRole('button', { name: 'Obriši tim' }));
+  await waitFor(() => expect(remove).toHaveBeenCalledExactlyOnceWith(team.id));
+  await screen.findByText('Još nema timova');
+});
+
+test('read failures show a retry control and recover', async () => {
+  const user = userEvent.setup();
+  vi.mocked(api.teams).mockRejectedValueOnce(new ApiError('Lista nije dostupna.', 503));
+  renderPage();
+  await screen.findByText('Lista nije dostupna.');
+  await user.click(screen.getByRole('button', { name: 'Pokušaj ponovo' }));
+  await screen.findByRole('article', { name: team.name });
+});
+
+test('deleting the last item on a later page returns to the previous page', async () => {
+  const user = userEvent.setup();
+  vi.mocked(api.teams).mockImplementation(async (page) => page === 0
+    ? { ...populated, page: 0, totalPages: 2, totalElements: 21 }
+    : { ...populated, page: 1, totalPages: 2, totalElements: 21 });
+  vi.spyOn(api, 'deleteTeam').mockResolvedValue();
+  renderPage();
+  await screen.findByRole('article');
+  const pageTwo = screen.getAllByRole('button').find((button) => button.textContent === '2')!;
+  await user.click(pageTwo);
+  await waitFor(() => expect(api.teams).toHaveBeenLastCalledWith(1, expect.any(AbortSignal)));
+  await screen.findByRole('article');
+  await user.click(screen.getByRole('button', { name: 'Obriši' }));
+  vi.mocked(api.teams).mockImplementation(async (page) => page === 1
+    ? { ...empty, page: 1, totalPages: 1, totalElements: 20 }
+    : { ...populated, page: 0, totalPages: 1, totalElements: 20 });
+  await user.click(screen.getByRole('button', { name: 'Obriši tim' }));
+  await waitFor(() => expect(api.teams).toHaveBeenLastCalledWith(0, expect.any(AbortSignal)));
+});
