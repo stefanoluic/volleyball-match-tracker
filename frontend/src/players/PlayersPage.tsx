@@ -180,7 +180,7 @@ export function PlayersPage({ team: initialTeam, canManage, onBack }: {
     <Stack gap="xl">
       <Button variant="subtle" size="sm" w="fit-content" leftSection={<IconArrowLeft size={17} aria-hidden="true" />}
         disabled={busy !== null || deleting !== null} onClick={onBack}>Nazad na timove</Button>
-      <Group justify="space-between" align="flex-start" className="page-heading">
+      <Group justify="space-between" align="flex-start" className="page-heading section-heading">
         <div>
           <Text size="xs" fw={700} c="blue.7" tt="uppercase" mb={8}>Sastav tima</Text>
           <Title order={1} size="h2" className="team-name">{team.name}</Title>
@@ -221,7 +221,7 @@ export function PlayersPage({ team: initialTeam, canManage, onBack }: {
             <SimpleGrid cols={{ base: 1, sm: 2, lg: 3 }}>
               {result.content.map((player) => (
                 <Paper component="article" aria-label={player.firstName + ' ' + player.lastName} key={player.id}
-                  withBorder p="lg" className="team-card">
+                  withBorder p="lg" className="team-card player-card">
                   <Stack gap="md" h="100%">
                     <Group justify="space-between">
                       <ThemeIcon variant="light" color="blue" size={48} radius="md" aria-label={'Broj dresa ' + player.jerseyNumber}>

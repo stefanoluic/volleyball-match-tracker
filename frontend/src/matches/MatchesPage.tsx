@@ -180,7 +180,7 @@ export function MatchesPage({ canManage }: { canManage: boolean }) {
 
   return (
     <Stack gap="xl">
-      <Group justify="space-between" align="flex-start" className="page-heading">
+      <Group justify="space-between" align="flex-start" className="page-heading section-heading">
         <div>
           <Text size="xs" fw={700} c="blue.7" tt="uppercase" mb={8}>Raspored · Utakmice</Text>
           <Title order={1} size="h2">Utakmice</Title>
@@ -199,7 +199,7 @@ export function MatchesPage({ canManage }: { canManage: boolean }) {
       <div aria-busy={loading}>
         {loading ? <SimpleGrid cols={{ base: 1, sm: 2 }}>{[0, 1].map((key) => <Skeleton key={key} height={190} radius="md" />)}</SimpleGrid>
           : result ? result.content.length === 0 ? (
-            <Paper withBorder p="xl" radius="md"><Stack align="center" gap="sm">
+            <Paper withBorder p="xl" radius="md" className="teams-empty"><Stack align="center" gap="sm">
               <ThemeIcon variant="light" size={54} radius="xl"><IconCalendarEvent size={28} /></ThemeIcon>
               <Title order={2} size="h4">Još nema utakmica</Title>
               <Text c="dimmed" ta="center">{canManage ? 'Dodajte prvu utakmicu između dva postojeća tima.' : 'Zakazane utakmice će biti prikazane ovde.'}</Text>
@@ -209,7 +209,7 @@ export function MatchesPage({ canManage }: { canManage: boolean }) {
               {result.content.map((match) => {
                 const title = match.homeTeam.name + ' — ' + match.awayTeam.name;
                 return (
-                  <Paper key={match.id} component="article" aria-label={title} withBorder p="lg" radius="md">
+                  <Paper key={match.id} component="article" aria-label={title} withBorder p="lg" radius="md" className="match-card">
                     <Stack gap="md">
                       <Group justify="space-between">
                         <ThemeIcon variant="light" size={40} radius="md"><IconCalendarEvent size={23} /></ThemeIcon>

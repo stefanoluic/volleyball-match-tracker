@@ -6,8 +6,10 @@ export const theme = createTheme({
   fontFamily: '"Segoe UI", system-ui, sans-serif',
   headings: { fontFamily: '"Segoe UI", system-ui, sans-serif', fontWeight: '700' },
   colors: {
-    blue: ['#edf4ff', '#dce8fa', '#b8d0ef', '#90b6e5', '#689bdc',
-      '#4e89d6', '#3475c5', '#2863aa', '#204f87', '#193d68'],
+    blue: ['#edf4fc', '#dbe8f7', '#b7cfea', '#8eb4df', '#6497cf',
+      '#3b7dbb', '#2563a6', '#20558e', '#1b4675', '#163653'],
+    teal: ['#eaf8f5', '#d2efe8', '#a8ded4', '#79cbbe', '#50b5a6',
+      '#29998c', '#137d73', '#10695f', '#0e554e', '#0b443e'],
   },
   components: {
     Button: Button.extend({ defaultProps: { fw: 600 } }),

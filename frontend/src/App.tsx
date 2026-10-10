@@ -1,6 +1,6 @@
 import { Alert, Avatar, Button, Center, Container, Group, Loader, Stack, Tabs, Text } from '@mantine/core';
 import { notifications } from '@mantine/notifications';
-import { IconAlertCircle, IconLogout } from '@tabler/icons-react';
+import { IconAlertCircle, IconBallVolleyball, IconCalendarEvent, IconLogout } from '@tabler/icons-react';
 import { lazy, Suspense, useEffect, useState } from 'react';
 import { api, ApiError, errorMessage, roleLabels, type User } from './api/client';
 import { AuthPage } from './auth/AuthPage';
@@ -93,9 +93,9 @@ export function App() {
           <Suspense fallback={<Center py="xl"><Loader aria-label="Učitavanje stranice" /></Center>}>
             {user.role === 'ADMIN' ? <AdminUsersPage /> : (
               <Tabs defaultValue="teams" keepMounted>
-                <Tabs.List mb="xl" aria-label="Sekcije aplikacije">
-                  <Tabs.Tab value="teams">Timovi i igrači</Tabs.Tab>
-                  <Tabs.Tab value="matches">Utakmice</Tabs.Tab>
+                <Tabs.List mb="xl" aria-label="Sekcije aplikacije" className="dashboard-navigation">
+                  <Tabs.Tab value="teams" leftSection={<IconBallVolleyball size={18} aria-hidden="true" />}>Timovi i igrači</Tabs.Tab>
+                  <Tabs.Tab value="matches" leftSection={<IconCalendarEvent size={18} aria-hidden="true" />}>Utakmice</Tabs.Tab>
                 </Tabs.List>
                 <Tabs.Panel value="teams"><TeamsPage canManage={user.role === 'STATISTICIAN'} /></Tabs.Panel>
                 <Tabs.Panel value="matches"><MatchesPage canManage={user.role === 'STATISTICIAN'} /></Tabs.Panel>

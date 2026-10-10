@@ -157,7 +157,7 @@ export function TeamsPage({ canManage }: { canManage: boolean }) {
 
   return (
     <Stack gap="xl">
-      <Group justify="space-between" align="flex-start" className="page-heading">
+      <Group justify="space-between" align="flex-start" className="page-heading section-heading">
         <div>
           <Text size="xs" fw={700} c="blue.7" tt="uppercase" mb={8}>Timovi · Osnova za utakmice</Text>
           <Title order={1} size="h2">Timovi</Title>

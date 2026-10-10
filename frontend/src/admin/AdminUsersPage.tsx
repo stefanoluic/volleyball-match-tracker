@@ -112,7 +112,7 @@ export function AdminUsersPage() {
 
   return (
     <Stack gap="xl">
-      <Group justify="space-between" align="flex-start" className="page-heading">
+      <Group justify="space-between" align="flex-start" className="page-heading section-heading">
         <div>
           <Text size="xs" fw={700} c="blue.7" tt="uppercase" mb={8}>Administracija · Pristup timu</Text>
           <Title order={1} size="h2">Korisnički nalozi</Title>
