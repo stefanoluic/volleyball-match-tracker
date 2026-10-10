@@ -1,5 +1,5 @@
 import { MantineProvider } from '@mantine/core';
-import { act, render, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, expect, test, vi } from 'vitest';
 import { App } from '../../src/App';
 import { api, type UserRole } from '../../src/api/client';
@@ -14,6 +14,7 @@ function mockAccount(role: UserRole) {
   });
   vi.spyOn(api, 'teams').mockResolvedValue({ content: [], page: 0, totalPages: 0, totalElements: 0 });
   vi.spyOn(api, 'users').mockResolvedValue({ content: [], page: 0, totalPages: 0, totalElements: 0 });
+  vi.spyOn(api, 'matches').mockResolvedValue({ content: [], page: 0, totalPages: 0, totalElements: 0 });
 }
 
 test.each(['ADMIN', 'STATISTICIAN', 'COACH'] as const)('signed-in %s receives the correct screen and controls', async (role) => {
@@ -30,6 +31,17 @@ test.each(['ADMIN', 'STATISTICIAN', 'COACH'] as const)('signed-in %s receives th
     if (role === 'STATISTICIAN') expect(screen.getByRole('button', { name: 'Dodaj tim' })).toBeTruthy();
     else expect(screen.queryByRole('button', { name: 'Dodaj tim' })).toBeNull();
   }
+});
+
+test('statistician switches between teams and matches using the main tabs', async () => {
+  mockAccount('STATISTICIAN');
+  render(<MantineProvider theme={theme} env="test"><App /></MantineProvider>);
+  await screen.findByRole('heading', { name: 'Timovi', level: 1 });
+  fireEvent.click(screen.getByRole('tab', { name: 'Utakmice' }));
+  await screen.findByRole('heading', { name: 'Utakmice', level: 1 });
+  expect(screen.getByRole('button', { name: 'Dodaj utakmicu' })).toBeTruthy();
+  fireEvent.click(screen.getByRole('tab', { name: 'Timovi i igrači' }));
+  await screen.findByRole('heading', { name: 'Timovi', level: 1 });
 });
 
 test('session expiry leaves the team screen and returns to authentication', async () => {

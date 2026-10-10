@@ -7,6 +7,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import rs.stefanoluic.volleyball.common.exception.ApiException;
 import rs.stefanoluic.volleyball.player.PlayerRepository;
+import rs.stefanoluic.volleyball.match.MatchRepository;
 import rs.stefanoluic.volleyball.team.dto.TeamPageResponse;
 import rs.stefanoluic.volleyball.team.dto.TeamRequest;
 import rs.stefanoluic.volleyball.team.dto.TeamResponse;
@@ -17,10 +18,12 @@ import java.util.UUID;
 public class TeamService {
     private final TeamRepository teams;
     private final PlayerRepository players;
+    private final MatchRepository matches;
 
-    public TeamService(TeamRepository teams, PlayerRepository players) {
+    public TeamService(TeamRepository teams, PlayerRepository players, MatchRepository matches) {
         this.teams = teams;
         this.players = players;
+        this.matches = matches;
     }
 
     @Transactional(readOnly = true)
@@ -62,6 +65,10 @@ public class TeamService {
         if (players.existsByTeamId(id)) {
             throw new ApiException(HttpStatus.CONFLICT,
                     "Tim nije moguće obrisati dok ima igrače. Najpre obrišite njegove igrače.");
+        }
+        if (matches.existsByHomeTeamIdOrAwayTeamId(id, id)) {
+            throw new ApiException(HttpStatus.CONFLICT,
+                    "Tim nije moguće obrisati dok je povezan sa utakmicom.");
         }
         teams.delete(team);
     }

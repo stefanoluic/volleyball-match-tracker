@@ -219,7 +219,7 @@ export function TeamsPage({ canManage }: { canManage: boolean }) {
                       disabled={busy !== null || deleting !== null} leftSection={<IconEye size={16} aria-hidden="true" />}>Prikaži igrače</Button>
                     {canManage && (deleting?.id === team.id ? (
                       <InlineDeleteConfirmation title="Brisanje tima" question={'Obrisati tim ' + team.name + '?'}
-                        warning="Tim će biti trajno obrisan. Ovu radnju nije moguće poništiti. Tim koji ima igrače ne može se obrisati."
+                        warning="Tim će biti trajno obrisan. Ovu radnju nije moguće poništiti. Tim sa igračima ili utakmicama ne može se obrisati."
                         error={deleteError} busy={busy === 'delete'} confirmLabel="Obriši tim"
                         onCancel={() => { setDeleting(null); setDeleteError(''); }} onConfirm={() => void remove()} />
                     ) : <Group gap="xs" pt="sm">

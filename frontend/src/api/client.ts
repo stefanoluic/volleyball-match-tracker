@@ -68,6 +68,30 @@ export interface PlayerPage {
   totalElements: number;
 }
 
+export type MatchStatus = 'SCHEDULED' | 'LIVE' | 'FINISHED';
+
+export interface MatchInput {
+  homeTeamId: string;
+  awayTeamId: string;
+  scheduledAt: string;
+}
+
+export interface Match {
+  id: string;
+  homeTeam: Team;
+  awayTeam: Team;
+  scheduledAt: string;
+  status: MatchStatus;
+  createdAt: string;
+}
+
+export interface MatchPage {
+  content: Match[];
+  page: number;
+  totalPages: number;
+  totalElements: number;
+}
+
 export class ApiError extends Error {
   constructor(
     message: string,
@@ -139,6 +163,24 @@ export const api = {
   updatePlayer: (teamId: string, id: string, data: PlayerInput) =>
     mutate<Player>('PUT', '/api/teams/' + teamId + '/players/' + id, data),
   deletePlayer: (teamId: string, id: string) => mutate<void>('DELETE', '/api/teams/' + teamId + '/players/' + id),
+  matches: (page: number, signal?: AbortSignal) =>
+    get<MatchPage>('/api/matches?' + new URLSearchParams({ page: String(page), size: '20' }), signal),
+  match: (id: string, signal?: AbortSignal) => get<Match>('/api/matches/' + id, signal),
+  createMatch: (data: MatchInput) => post<Match>('/api/matches', data),
+  updateMatch: (id: string, data: MatchInput) => mutate<Match>('PUT', '/api/matches/' + id, data),
+  deleteMatch: (id: string) => mutate<void>('DELETE', '/api/matches/' + id),
+  teamOptions: async (signal?: AbortSignal): Promise<Team[]> => {
+    const teams: Team[] = [];
+    let page = 0;
+    let totalPages = 1;
+    do {
+      const result = await get<TeamPage>('/api/teams?' + new URLSearchParams({ page: String(page), size: '100' }), signal);
+      teams.push(...result.content);
+      totalPages = result.totalPages;
+      page++;
+    } while (page < totalPages);
+    return [...new Map(teams.map((team) => [team.id, team])).values()];
+  },
 };
 
 export function errorMessage(error: unknown): string {

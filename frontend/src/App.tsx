@@ -1,4 +1,4 @@
-import { Alert, Avatar, Button, Center, Container, Group, Loader, Stack, Text } from '@mantine/core';
+import { Alert, Avatar, Button, Center, Container, Group, Loader, Stack, Tabs, Text } from '@mantine/core';
 import { notifications } from '@mantine/notifications';
 import { IconAlertCircle, IconLogout } from '@tabler/icons-react';
 import { lazy, Suspense, useEffect, useState } from 'react';
@@ -8,6 +8,7 @@ import { Brand } from './components/Brand';
 
 const AdminUsersPage = lazy(() => import('./admin/AdminUsersPage').then(({ AdminUsersPage }) => ({ default: AdminUsersPage })));
 const TeamsPage = lazy(() => import('./teams/TeamsPage').then(({ TeamsPage }) => ({ default: TeamsPage })));
+const MatchesPage = lazy(() => import('./matches/MatchesPage').then(({ MatchesPage }) => ({ default: MatchesPage })));
 
 export function App() {
   const [user, setUser] = useState<User | null>(null);
@@ -90,7 +91,16 @@ export function App() {
         <Stack gap="lg">
           {error && <Alert color="red" icon={<IconAlertCircle size={19} />} role="alert" withCloseButton onClose={() => setError('')}>{error}</Alert>}
           <Suspense fallback={<Center py="xl"><Loader aria-label="Učitavanje stranice" /></Center>}>
-            {user.role === 'ADMIN' ? <AdminUsersPage /> : <TeamsPage canManage={user.role === 'STATISTICIAN'} />}
+            {user.role === 'ADMIN' ? <AdminUsersPage /> : (
+              <Tabs defaultValue="teams" keepMounted>
+                <Tabs.List mb="xl" aria-label="Sekcije aplikacije">
+                  <Tabs.Tab value="teams">Timovi i igrači</Tabs.Tab>
+                  <Tabs.Tab value="matches">Utakmice</Tabs.Tab>
+                </Tabs.List>
+                <Tabs.Panel value="teams"><TeamsPage canManage={user.role === 'STATISTICIAN'} /></Tabs.Panel>
+                <Tabs.Panel value="matches"><MatchesPage canManage={user.role === 'STATISTICIAN'} /></Tabs.Panel>
+              </Tabs>
+            )}
           </Suspense>
         </Stack>
       </Container>

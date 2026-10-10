@@ -4,7 +4,8 @@ A web application for recording volleyball match events and displaying statistic
 
 The application supports registration, session-based login/logout, administrator
 approval, blocking and permanent deletion of blocked user accounts, and team
-management and team rosters. Match tracking, statistics and reporting are not implemented yet.
+management, team rosters and match scheduling. Live match tracking, statistics
+and reporting are not implemented yet.
 
 ## Stack
 
@@ -110,7 +111,8 @@ npm run build
 Backend tests cover bootstrap, hashing, registration, validation, account status,
 authorization, CSRF, session ID rotation, blocking, permanent deletion, logout,
 and team/player CRUD, validation, foreign-key and jersey constraints, concurrent
-roster writes and role-based access. Integration tests
+roster writes, match scheduling, time-zone conversion, match/team deletion guards
+and role-based access. Integration tests
 require Docker and use a separate temporary PostgreSQL container through
 Testcontainers. They do not modify the development database or its admin account.
 The first run may download the Testcontainers cleanup image.
@@ -253,6 +255,39 @@ cascading deletion. Match relationships will need their own deletion rules.
 Player IDs are checked against the team in the URL; a player from a different
 team cannot be read, edited or deleted through that path. Players are separate
 from application user accounts and have no login credentials.
+
+## Matches
+
+- Statisticians can create, edit and delete scheduled matches. Coaching staff can
+  read them; administrators have no access to match endpoints.
+- Each match references two different existing teams as home and away participants.
+  Teams referenced by any match cannot be deleted. Deleting a scheduled match
+  does not delete its teams or players.
+- The sixth migration creates volleyball.matches with UUID, two required team
+  foreign keys, scheduled_at, status and created_at. Foreign keys restrict team
+  deletion, and a database check prevents a team from playing itself.
+- New matches always have SCHEDULED status. LIVE and FINISHED are reserved for
+  later match tracking; no status-transition endpoint or control is available yet.
+  The backend rejects editing/deleting either of those statuses.
+- The frontend's Utakmice tab shows a paginated list, newest scheduled time first.
+  Forms use dedicated screens and deletion uses inline confirmation.
+- Team selectors are searchable and load all team pages. At least two teams must
+  exist; the same team is disabled in the opposite selector.
+- Date/time input and display use the browser's time zone, shown in the interface.
+  API timestamps include an offset or UTC Z; PostgreSQL stores TIMESTAMPTZ.
+  Local times skipped by daylight-saving changes are rejected by the form.
+  An ambiguous local time at the autumn clock change uses the browser's earlier
+  occurrence. Past dates are allowed for recording historical fixtures.
+- No duplicate-fixture or overlapping-schedule rule is imposed in this version.
+  Match lineups, scores, events and statistics are not implemented yet.
+
+| Method | Path | Access |
+| --- | --- | --- |
+| GET | /api/matches | Active statistician or coach; optional page and size |
+| GET | /api/matches/{id} | Active statistician or coach |
+| POST | /api/matches | Active statistician, CSRF required |
+| PUT | /api/matches/{id} | Active statistician, CSRF required; scheduled only |
+| DELETE | /api/matches/{id} | Active statistician, CSRF required; scheduled only |
 
 ## Initial administrator
 
