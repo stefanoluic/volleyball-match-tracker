@@ -4,7 +4,7 @@ A web application for recording volleyball match events and displaying statistic
 
 The application supports registration, session-based login/logout, administrator
 approval, blocking and permanent deletion of blocked user accounts, and team
-management. Players, match tracking, statistics and reporting are not implemented yet.
+management and team rosters. Match tracking, statistics and reporting are not implemented yet.
 
 ## Stack
 
@@ -14,6 +14,39 @@ management. Players, match tracking, statistics and reporting are not implemente
 - Argon2id password hashing
 - React 19, TypeScript, Vite, Mantine UI
 - Docker Compose for the development database
+
+## Windows quick start
+
+Double-click Pokreni.cmd in the project folder. It checks prerequisites, starts
+Docker Desktop if needed, waits for the database, starts the backend and frontend
+in the background, and opens http://localhost:5173 when both servers are ready.
+Existing project servers are reused; another application occupying a required
+port is not stopped or replaced.
+
+Double-click Zaustavi.cmd to stop this project's servers and database.
+It does not delete database volumes or stop Docker Desktop itself. Servers started
+manually are stopped only when their command line identifies this exact project.
+Restarting the backend clears login sessions, so sign in again after restarting.
+
+The scripts require the tools listed below and an existing local .env file.
+They never overwrite .env. If frontend dependencies are missing, startup runs
+npm ci using the existing lockfile. Startup can take longer on the first run.
+Local process records and timestamped logs are kept in the ignored .local-run
+folder. On failure, the launcher shows an error and waits for a key press.
+The CMD wrappers use a PowerShell execution-policy override only for the
+launcher process; they do not change the computer's saved policy.
+
+Launcher safety tests use fake processes and do not stop real applications:
+
+~~~powershell
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\test-local-app.ps1
+~~~
+
+For terminal use, including verification without opening a browser:
+
+~~~powershell
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\local-app.ps1 -Action Start -NoBrowser
+~~~
 
 ## Run locally
 
@@ -76,7 +109,8 @@ npm run build
 
 Backend tests cover bootstrap, hashing, registration, validation, account status,
 authorization, CSRF, session ID rotation, blocking, permanent deletion, logout,
-and team CRUD, validation and role-based access. Integration tests
+and team/player CRUD, validation, foreign-key and jersey constraints, concurrent
+roster writes and role-based access. Integration tests
 require Docker and use a separate temporary PostgreSQL container through
 Testcontainers. They do not modify the development database or its admin account.
 The first run may download the Testcontainers cleanup image.
@@ -109,6 +143,11 @@ compatibility with the initial schema.
 The fourth migration creates volleyball.teams with a UUID, name, city and creation
 time. A unique index on lower(name) and lower(city) prevents case-insensitive duplicates.
 
+The fifth migration creates volleyball.players with a UUID, first/last name,
+jersey number, primary position, required team foreign key and creation time.
+The database enforces unique jersey numbers within a team and restricts deletion
+of a referenced team. Positions are stored as names, not numeric enum ordinals.
+
 ## Accounts and sessions
 
 - Public registration accepts only `STATISTICIAN` or `COACH`, always as `PENDING`.
@@ -126,7 +165,7 @@ time. A unique index on lower(name) and lower(city) prevents case-insensitive du
   30 minutes of inactivity; restarting the backend clears them.
 - Session cookies are HttpOnly and SameSite=Lax. Local HTTP uses non-Secure cookies;
   for HTTPS deployment set `SERVER_SERVLET_SESSION_COOKIE_SECURE=true`.
-- CSRF protection is enabled for registration, login, logout, admin changes and team changes.
+- CSRF protection is enabled for registration, login, logout, admin, team and player changes.
   The frontend obtains a masked token before each POST, PUT or DELETE and sends its specified
   header. No JWTs, localStorage credentials or permissive CORS are used.
 - Password hashes are never included in API responses. Login failures use a
@@ -154,12 +193,14 @@ abuse/rate limiting, password recovery and operational configuration.
 
 ## Teams
 
-- Statisticians can list, create, edit and permanently delete teams.
+- Statisticians can list, create, edit and permanently delete teams that have no players.
 - Coaching staff can list teams and view their data, but cannot change them.
 - Administrators currently manage accounts only and have no access to team endpoints.
 - Name and city are required, trimmed, Unicode-normalized and limited to 100 characters.
 - The same name/city combination cannot be registered twice, ignoring case.
 - The interface confirms deletion and preserves entered data on a failed save.
+- Adding and editing use dedicated in-app screens with breadcrumbs and a cancel
+  action, rather than modal windows. Deletion is confirmed inline on the selected card.
 - Lists are paginated (20 per page in the interface), sorted by name and identifier.
 - All teams are shared within this application; separate club membership is not implemented.
 
@@ -171,8 +212,47 @@ abuse/rate limiting, password recovery and operational configuration.
 | PUT | /api/teams/{id} | Active statistician, CSRF required |
 | DELETE | /api/teams/{id} | Active statistician, CSRF required |
 
-Players and matches are not yet linked to teams. Before implementing those
-relationships, deletion rules must be extended to protect referenced teams.
+Teams with players cannot be deleted. The service returns a conflict with an
+explanation, and the database foreign key provides a second guard without
+cascading deletion. Match relationships will need their own deletion rules.
+
+## Players
+
+- Open a team's roster with the Show players button; use Back to teams to return.
+- Statisticians can add, edit and permanently delete players after confirmation.
+- Coaching staff can read rosters but cannot modify them; admins have no roster access.
+- Each player belongs to exactly one existing team. Moving players between teams
+  and tracking historical rosters are not implemented yet.
+- First and last names are required, trimmed, Unicode-normalized and limited to
+  100 characters. Letters, including Serbian Latin/Cyrillic, are allowed with
+  single internal spaces or hyphens.
+- Jersey numbers are integers from 1 to 99, an application limit rather than a
+  universal competition rule. Numbers are unique within a team but may repeat
+  across different teams.
+- Primary positions are SETTER (Tehničar), OUTSIDE_HITTER (Primač servisa),
+  OPPOSITE (Korektor), MIDDLE_BLOCKER (Srednji bloker) and LIBERO (Libero).
+  A primary position is not a rotation slot; rotation, match lineups and captain
+  designation are outside this version.
+- Rosters are paginated (20 per page in the interface), sorted by jersey number.
+- Player changes and team deletion lock the same team row to serialize competing
+  changes. Database constraints also enforce jersey uniqueness and team integrity.
+- Failed saves preserve entered data. Invalid name fields show error borders
+  and messages without changing the entered text color.
+- Adding and editing players use full-page forms with team context and breadcrumbs.
+  Deletion confirmation stays inside the player's card; no roster modal is used.
+- All rosters are shared within the application; club-level ownership is not implemented.
+
+| Method | Path | Access |
+| --- | --- | --- |
+| GET | /api/teams/{teamId}/players | Active statistician or coach; optional page and size |
+| GET | /api/teams/{teamId}/players/{id} | Active statistician or coach |
+| POST | /api/teams/{teamId}/players | Active statistician, CSRF required |
+| PUT | /api/teams/{teamId}/players/{id} | Active statistician, CSRF required |
+| DELETE | /api/teams/{teamId}/players/{id} | Active statistician, CSRF required |
+
+Player IDs are checked against the team in the URL; a player from a different
+team cannot be read, edited or deleted through that path. Players are separate
+from application user accounts and have no login credentials.
 
 ## Initial administrator
 

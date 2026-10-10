@@ -1,21 +1,26 @@
 import {
-  Alert, Badge, Button, Group, Modal, Pagination, Paper, SimpleGrid, Skeleton,
+  Alert, Badge, Button, Group, Pagination, Paper, SimpleGrid, Skeleton,
   Stack, Text, TextInput, ThemeIcon, Title,
 } from '@mantine/core';
 import { notifications } from '@mantine/notifications';
 import {
-  IconAlertCircle, IconBallVolleyball, IconCheck, IconEye, IconMapPin,
+  IconAlertCircle, IconBallVolleyball, IconCheck, IconEye, IconInfoCircle, IconMapPin,
   IconPencil, IconPlus, IconRefresh, IconTrash,
 } from '@tabler/icons-react';
 import { useEffect, useState, type FormEvent } from 'react';
 import { api, ApiError, errorMessage, type Team, type TeamInput, type TeamPage } from '../api/client';
 import { normalizeTeamInput, validateTeamInput } from './validation';
+import { PlayersPage } from '../players/PlayersPage';
+
+import { EditorPage } from '../components/EditorPage';
+import { InlineDeleteConfirmation } from '../components/InlineDeleteConfirmation';
 
 type Editor = { type: 'create' } | { type: 'edit'; team: Team };
 const emptyInput: TeamInput = { name: '', city: '' };
 const inputStyles = { input: { color: 'var(--mantine-color-text)' } };
 
 export function TeamsPage({ canManage }: { canManage: boolean }) {
+  const [selectedTeam, setSelectedTeam] = useState<Team | null>(null);
   const [page, setPage] = useState(0);
   const [result, setResult] = useState<TeamPage | null>(null);
   const [loading, setLoading] = useState(true);
@@ -51,6 +56,8 @@ export function TeamsPage({ canManage }: { canManage: boolean }) {
     setInput(next.type === 'edit' ? { name: next.team.name, city: next.team.city } : { ...emptyInput });
     setFields({});
     setFormError('');
+    setDeleting(null);
+    setDeleteError('');
     setEditor(next);
   }
 
@@ -104,6 +111,50 @@ export function TeamsPage({ canManage }: { canManage: boolean }) {
     }
   }
 
+  if (editor && canManage) return (
+    <EditorPage title={editor.type === 'edit' ? 'Izmena tima' : 'Novi tim'}
+      category="Upravljanje timovima" icon={<IconBallVolleyball size={28} stroke={1.6} />}
+      description="Osnovni podaci o odbojkaškom timu."
+      busy={busy !== null} breadcrumbs={[
+        { label: 'Timovi', onClick: () => setEditor(null) },
+        ...(editor.type === 'edit' ? [{ label: editor.team.name }] : []),
+      ]}>
+        <form aria-label={editor.type === 'edit' ? 'Izmena tima' : 'Novi tim'} onSubmit={save} noValidate>
+          <Stack gap="xl">
+            {formError && <Alert color="red" icon={<IconAlertCircle size={18} aria-hidden="true" />} role="alert">{formError}</Alert>}
+            <Stack gap="md">
+              <Text className="editor-section-label">Podaci o timu</Text>
+              <div className="editor-team-fields">
+                <TextInput label="Naziv tima" placeholder="npr. OK Vojvodina" required maxLength={100}
+                  value={input.name} disabled={busy !== null} error={fields.name} styles={inputStyles}
+                  leftSection={<IconBallVolleyball size={18} aria-hidden="true" />}
+                  onChange={(event) => updateInput('name', event.currentTarget.value)} />
+                <TextInput label="Grad" placeholder="npr. Novi Sad" required maxLength={100}
+                  value={input.city} disabled={busy !== null} error={fields.city} styles={inputStyles}
+                  leftSection={<IconMapPin size={18} aria-hidden="true" />}
+                  onChange={(event) => updateInput('city', event.currentTarget.value)} />
+              </div>
+            </Stack>
+            <Group gap={10} wrap="nowrap" align="flex-start" className="editor-form-note">
+              <IconInfoCircle size={18} aria-hidden="true" />
+              <Text size="sm">Tim sa istim nazivom u istom gradu ne može se dodati dva puta.</Text>
+            </Group>
+            <Group justify="space-between" className="editor-actions">
+              <Text size="xs" c="dimmed">Sva polja su obavezna.</Text>
+              <Group gap="sm" className="editor-action-buttons">
+                <Button variant="default" size="md" disabled={busy !== null} onClick={() => setEditor(null)}>Odustani</Button>
+                <Button type="submit" size="md" loading={busy === 'save'} leftSection={<IconCheck size={17} aria-hidden="true" />}>
+                  {editor.type === 'edit' ? 'Sačuvaj izmene' : 'Sačuvaj tim'}
+                </Button>
+              </Group>
+            </Group>
+          </Stack>
+        </form>
+    </EditorPage>
+  );
+
+  if (selectedTeam) return <PlayersPage team={selectedTeam} canManage={canManage} onBack={() => setSelectedTeam(null)} />;
+
   return (
     <Stack gap="xl">
       <Group justify="space-between" align="flex-start" className="page-heading">
@@ -116,9 +167,9 @@ export function TeamsPage({ canManage }: { canManage: boolean }) {
         </div>
         <Group gap="sm">
           <Button variant="default" size="sm" leftSection={<IconRefresh size={16} aria-hidden="true" />}
-            onClick={() => setRefresh((value) => value + 1)} disabled={loading || busy !== null}>Osveži</Button>
+            onClick={() => setRefresh((value) => value + 1)} disabled={loading || busy !== null || deleting !== null}>Osveži</Button>
           {canManage && <Button size="sm" leftSection={<IconPlus size={17} aria-hidden="true" />}
-            disabled={busy !== null} onClick={() => openEditor({ type: 'create' })}>Dodaj tim</Button>}
+            disabled={busy !== null || deleting !== null} onClick={() => openEditor({ type: 'create' })}>Dodaj tim</Button>}
         </Group>
       </Group>
       {!canManage && <Badge variant="light" color="blue" leftSection={<IconEye size={14} aria-hidden="true" />} w="fit-content">
@@ -164,12 +215,19 @@ export function TeamsPage({ canManage }: { canManage: boolean }) {
                         <Text size="sm" className="team-city">{team.city}</Text>
                       </Group>
                     </div>
-                    {canManage && <Group gap="xs" mt="auto" pt="sm">
+                    <Button variant="light" size="sm" mt="auto" onClick={() => setSelectedTeam(team)}
+                      disabled={busy !== null || deleting !== null} leftSection={<IconEye size={16} aria-hidden="true" />}>Prikaži igrače</Button>
+                    {canManage && (deleting?.id === team.id ? (
+                      <InlineDeleteConfirmation title="Brisanje tima" question={'Obrisati tim ' + team.name + '?'}
+                        warning="Tim će biti trajno obrisan. Ovu radnju nije moguće poništiti. Tim koji ima igrače ne može se obrisati."
+                        error={deleteError} busy={busy === 'delete'} confirmLabel="Obriši tim"
+                        onCancel={() => { setDeleting(null); setDeleteError(''); }} onConfirm={() => void remove()} />
+                    ) : <Group gap="xs" pt="sm">
                       <Button size="xs" variant="light" leftSection={<IconPencil size={15} aria-hidden="true" />}
-                        disabled={busy !== null} onClick={() => openEditor({ type: 'edit', team })}>Izmeni</Button>
+                        disabled={busy !== null || deleting !== null} onClick={() => openEditor({ type: 'edit', team })}>Izmeni</Button>
                       <Button size="xs" variant="light" color="red" leftSection={<IconTrash size={15} aria-hidden="true" />}
-                        disabled={busy !== null} onClick={() => { setDeleteError(''); setDeleting(team); }}>Obriši</Button>
-                    </Group>}
+                        disabled={busy !== null || deleting !== null} onClick={() => { setDeleteError(''); setDeleting(team); }}>Obriši</Button>
+                    </Group>)}
                   </Stack>
                 </Paper>
               ))}
@@ -180,47 +238,8 @@ export function TeamsPage({ canManage }: { canManage: boolean }) {
       {!loading && result && <Group justify="space-between">
         <Text size="sm" c="dimmed">Ukupno timova: {result.totalElements}</Text>
         {result.totalPages > 1 && <Pagination total={result.totalPages} value={page + 1}
-          onChange={(value) => setPage(value - 1)} size="sm" disabled={busy !== null} />}
+          onChange={(value) => setPage(value - 1)} size="sm" disabled={busy !== null || deleting !== null} />}
       </Group>}
-      <Modal opened={editor !== null} onClose={() => { if (!busy) setEditor(null); }}
-        title={editor?.type === 'edit' ? 'Izmena tima' : 'Novi tim'} centered
-        closeOnEscape={!busy} closeOnClickOutside={!busy} withCloseButton={!busy}>
-        <form onSubmit={save} noValidate>
-          <Stack gap="lg">
-            <Text size="sm" c="dimmed">Unesite naziv i grad. Tim sa istim nazivom u istom gradu ne može se dodati dva puta.</Text>
-            {formError && <Alert color="red" icon={<IconAlertCircle size={18} aria-hidden="true" />} role="alert">{formError}</Alert>}
-            <TextInput label="Naziv tima" placeholder="OK Vojvodina" required maxLength={100}
-              value={input.name} disabled={busy !== null} error={fields.name} styles={inputStyles}
-              onChange={(event) => updateInput('name', event.currentTarget.value)} />
-            <TextInput label="Grad" placeholder="Novi Sad" required maxLength={100}
-              value={input.city} disabled={busy !== null} error={fields.city} styles={inputStyles}
-              leftSection={<IconMapPin size={17} aria-hidden="true" />}
-              onChange={(event) => updateInput('city', event.currentTarget.value)} />
-            <Group justify="flex-end">
-              <Button variant="default" disabled={busy !== null} onClick={() => setEditor(null)}>Odustani</Button>
-              <Button type="submit" loading={busy === 'save'} leftSection={<IconCheck size={17} aria-hidden="true" />}>
-                {editor?.type === 'edit' ? 'Sačuvaj izmene' : 'Sačuvaj tim'}
-              </Button>
-            </Group>
-          </Stack>
-        </form>
-      </Modal>
-      <Modal opened={deleting !== null} onClose={() => { if (!busy) setDeleting(null); }} title="Brisanje tima"
-        centered closeOnEscape={!busy} closeOnClickOutside={!busy} withCloseButton={!busy}>
-        <Stack gap="lg">
-          <ThemeIcon color="red" variant="light" size={48} radius="xl"><IconTrash size={24} aria-hidden="true" /></ThemeIcon>
-          <Text>Obrisati tim <strong className="team-name">{deleting?.name}</strong>?</Text>
-          <Alert color="red" icon={<IconAlertCircle size={18} aria-hidden="true" />}>
-            Tim će biti trajno obrisan. Ovu radnju nije moguće poništiti.
-          </Alert>
-          {deleteError && <Alert color="red" role="alert">{deleteError}</Alert>}
-          <Group justify="flex-end">
-            <Button variant="default" disabled={busy !== null} onClick={() => setDeleting(null)}>Odustani</Button>
-            <Button color="red" loading={busy === 'delete'} leftSection={<IconTrash size={17} aria-hidden="true" />}
-              onClick={() => void remove()}>Obriši tim</Button>
-          </Group>
-        </Stack>
-      </Modal>
     </Stack>
   );
 }

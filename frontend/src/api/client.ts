@@ -46,6 +46,28 @@ export interface TeamPage {
   totalElements: number;
 }
 
+export type PlayerPosition = 'SETTER' | 'OUTSIDE_HITTER' | 'OPPOSITE' | 'MIDDLE_BLOCKER' | 'LIBERO';
+
+export interface PlayerInput {
+  firstName: string;
+  lastName: string;
+  jerseyNumber: number;
+  position: PlayerPosition;
+}
+
+export interface Player extends PlayerInput {
+  id: string;
+  teamId: string;
+  createdAt: string;
+}
+
+export interface PlayerPage {
+  content: Player[];
+  page: number;
+  totalPages: number;
+  totalElements: number;
+}
+
 export class ApiError extends Error {
   constructor(
     message: string,
@@ -110,6 +132,13 @@ export const api = {
   createTeam: (data: TeamInput) => post<Team>('/api/teams', data),
   updateTeam: (id: string, data: TeamInput) => mutate<Team>('PUT', '/api/teams/' + id, data),
   deleteTeam: (id: string) => mutate<void>('DELETE', '/api/teams/' + id),
+  team: (id: string, signal?: AbortSignal) => get<Team>('/api/teams/' + id, signal),
+  players: (teamId: string, page: number, signal?: AbortSignal) =>
+    get<PlayerPage>('/api/teams/' + teamId + '/players?' + new URLSearchParams({ page: String(page), size: '20' }), signal),
+  createPlayer: (teamId: string, data: PlayerInput) => post<Player>('/api/teams/' + teamId + '/players', data),
+  updatePlayer: (teamId: string, id: string, data: PlayerInput) =>
+    mutate<Player>('PUT', '/api/teams/' + teamId + '/players/' + id, data),
+  deletePlayer: (teamId: string, id: string) => mutate<void>('DELETE', '/api/teams/' + teamId + '/players/' + id),
 };
 
 export function errorMessage(error: unknown): string {

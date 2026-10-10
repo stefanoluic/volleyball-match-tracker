@@ -10,6 +10,7 @@ frontend/dist/
 frontend/*.tsbuildinfo
 
 # Editors and local logs
+.local-run/
 .idea/
 .vscode/
 *.iml
