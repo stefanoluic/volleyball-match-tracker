@@ -4,7 +4,7 @@ A web application for recording volleyball match events and displaying statistic
 
 The application supports registration, session-based login/logout, administrator
 approval, blocking and permanent deletion of blocked user accounts, and team
-management, team rosters and match scheduling. Live match tracking, statistics
+management, team rosters, match scheduling and match participant selection. Live match tracking, statistics
 and reporting are not implemented yet.
 
 ## Stack
@@ -111,8 +111,8 @@ npm run build
 Backend tests cover bootstrap, hashing, registration, validation, account status,
 authorization, CSRF, session ID rotation, blocking, permanent deletion, logout,
 and team/player CRUD, validation, foreign-key and jersey constraints, concurrent
-roster writes, match scheduling, time-zone conversion, match/team deletion guards
-and role-based access. Integration tests
+roster writes, match scheduling, time-zone conversion, match/team deletion guards,
+match participant snapshots, stale-save protection and role-based access. Integration tests
 require Docker and use a separate temporary PostgreSQL container through
 Testcontainers. They do not modify the development database or its admin account.
 The first run may download the Testcontainers cleanup image.
@@ -150,6 +150,14 @@ jersey number, primary position, required team foreign key and creation time.
 The database enforces unique jersey numbers within a team and restricts deletion
 of a referenced team. Positions are stored as names, not numeric enum ordinals.
 
+The sixth migration creates volleyball.matches. The seventh creates
+volleyball.match_players and adds roster_version to matches. Each participant
+row references one match, player and team and stores the player's name, jersey
+number, primary position and match-specific libero designation. Unique constraints
+prevent duplicate participants and repeated jersey numbers within a match's team.
+Deleting a match cascades only its participant rows; referenced players and teams
+cannot be deleted through database foreign keys.
+
 ## Accounts and sessions
 
 - Public registration accepts only `STATISTICIAN` or `COACH`, always as `PENDING`.
@@ -167,7 +175,7 @@ of a referenced team. Positions are stored as names, not numeric enum ordinals.
   30 minutes of inactivity; restarting the backend clears them.
 - Session cookies are HttpOnly and SameSite=Lax. Local HTTP uses non-Secure cookies;
   for HTTPS deployment set `SERVER_SERVLET_SESSION_COOKIE_SECURE=true`.
-- CSRF protection is enabled for registration, login, logout, admin, team and player changes.
+- CSRF protection is enabled for registration, login, logout, admin, team, player and match changes.
   The frontend obtains a masked token before each POST, PUT or DELETE and sends its specified
   header. No JWTs, localStorage credentials or permissive CORS are used.
 - Password hashes are never included in API responses. Login failures use a
@@ -216,15 +224,17 @@ abuse/rate limiting, password recovery and operational configuration.
 
 Teams with players cannot be deleted. The service returns a conflict with an
 explanation, and the database foreign key provides a second guard without
-cascading deletion. Match relationships will need their own deletion rules.
+cascading deletion. Teams referenced by matches also cannot be deleted.
 
 ## Players
 
 - Open a team's roster with the Show players button; use Back to teams to return.
-- Statisticians can add, edit and permanently delete players after confirmation.
+- Statisticians can add and edit players. Permanent deletion requires confirmation
+  and is allowed only when the player is not referenced by a saved match roster.
 - Coaching staff can read rosters but cannot modify them; admins have no roster access.
 - Each player belongs to exactly one existing team. Moving players between teams
-  and tracking historical rosters are not implemented yet.
+  is not implemented yet. Saved match participants retain their original team
+  reference and player data rather than following subsequent player edits.
 - First and last names are required, trimmed, Unicode-normalized and limited to
   100 characters. Letters, including Serbian Latin/Cyrillic, are allowed with
   single internal spaces or hyphens.
@@ -279,7 +289,11 @@ from application user accounts and have no login credentials.
   An ambiguous local time at the autumn clock change uses the browser's earlier
   occurrence. Past dates are allowed for recording historical fixtures.
 - No duplicate-fixture or overlapping-schedule rule is imposed in this version.
-  Match lineups, scores, events and statistics are not implemented yet.
+  Set lineups, scores, events and statistics are not implemented yet.
+- Changing either team requires clearing and saving both participant rosters first.
+  The date/time may still be edited with saved rosters.
+- Deleting a scheduled match also deletes its saved participant rows. The
+  interface explains this in its inline confirmation.
 
 | Method | Path | Access |
 | --- | --- | --- |
@@ -288,6 +302,39 @@ from application user accounts and have no login credentials.
 | POST | /api/matches | Active statistician, CSRF required |
 | PUT | /api/matches/{id} | Active statistician, CSRF required; scheduled only |
 | DELETE | /api/matches/{id} | Active statistician, CSRF required; scheduled only |
+
+## Match participants
+
+- Open Prikaži sastave on a match card to see both teams on a dedicated screen.
+  Statisticians can select participants and designate liberos for scheduled
+  matches; coaches have read-only access to the saved participants.
+- Partial and empty drafts are allowed. No starting six, court positions,
+  rotations or substitutions are recorded yet; participants are not a set lineup.
+- Each side may have at most two designated liberos, following rule 19.1.1 in the
+  [FIVB rules](https://www.fivb.com/wp-content/uploads/2025/01/FIVB-Volleyball_Rules2025_2028-EN-v05.pdf).
+  A player's primary LIBERO position preselects the checkbox, which remains editable
+  for this match. Competition-specific roster-size rules are not implemented.
+- The service accepts only current members of the specified team when adding
+  a participant. Existing entries retain their original team and snapshots.
+  Resaving an existing entry preserves its ID and player details; only the
+  libero flag is updated. Removing and later adding a player creates a new
+  entry with the player's current details.
+- Both sides are saved in a single transaction. Match and team locks prevent
+  conflicting participant/player writes. The request includes the roster version;
+  an outdated version is rejected with HTTP 409 rather than overwriting another save.
+- Failed saves preserve the selection. Učitaj sačuvani sastav explicitly reloads
+  the saved version; leaving or reloading a changed draft asks before discarding it.
+- The database protects foreign keys and uniqueness; the service additionally
+  checks team membership, match status and the number of designated liberos.
+
+| Method | Path | Access |
+| --- | --- | --- |
+| GET | /api/matches/{id}/roster | Active statistician or coach |
+| PUT | /api/matches/{id}/roster | Active statistician, CSRF required; scheduled only |
+
+The PUT body contains version, homePlayers and awayPlayers. Each player item
+contains playerId and isLibero; names, jersey numbers and positions are taken from
+the database, not accepted as editable client snapshots.
 
 ## Initial administrator
 

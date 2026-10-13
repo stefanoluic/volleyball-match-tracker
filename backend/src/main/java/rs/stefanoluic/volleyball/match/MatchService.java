@@ -7,6 +7,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import rs.stefanoluic.volleyball.common.exception.ApiException;
 import rs.stefanoluic.volleyball.match.dto.*;
+import rs.stefanoluic.volleyball.match.roster.MatchPlayerRepository;
 import rs.stefanoluic.volleyball.team.Team;
 import rs.stefanoluic.volleyball.team.TeamRepository;
 
@@ -16,10 +17,12 @@ import java.util.UUID;
 public class MatchService {
     private final MatchRepository matches;
     private final TeamRepository teams;
+    private final MatchPlayerRepository matchPlayers;
 
-    public MatchService(MatchRepository matches, TeamRepository teams) {
+    public MatchService(MatchRepository matches, TeamRepository teams, MatchPlayerRepository matchPlayers) {
         this.matches = matches;
         this.teams = teams;
+        this.matchPlayers = matchPlayers;
     }
 
     @Transactional(readOnly = true)
@@ -49,6 +52,12 @@ public class MatchService {
         Match match = matches.findByIdForUpdate(id).orElseThrow(MatchService::notFound);
         requireScheduled(match);
         var participants = participants(request);
+        if ((!match.getHomeTeam().getId().equals(request.homeTeamId())
+                || !match.getAwayTeam().getId().equals(request.awayTeamId()))
+                && matchPlayers.existsByMatchId(id)) {
+            throw new ApiException(HttpStatus.CONFLICT,
+                    "Pre promene timova ispraznite i sačuvajte oba sastava utakmice.");
+        }
         match.update(participants.home(), participants.away(), request.scheduledAt());
         matches.flush();
         return MatchResponse.from(match);

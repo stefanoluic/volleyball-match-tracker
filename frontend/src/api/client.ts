@@ -92,6 +92,37 @@ export interface MatchPage {
   totalElements: number;
 }
 
+export interface RosterPlayerInput {
+  playerId: string;
+  isLibero: boolean;
+}
+
+export interface MatchPlayer extends PlayerInput {
+  id: string;
+  playerId: string;
+  teamId: string;
+  isLibero: boolean;
+}
+
+export interface TeamRoster {
+  team: Team;
+  selected: MatchPlayer[];
+  available: Player[];
+}
+
+export interface MatchRoster {
+  match: Match;
+  version: number;
+  home: TeamRoster;
+  away: TeamRoster;
+}
+
+export interface MatchRosterInput {
+  version: number;
+  homePlayers: RosterPlayerInput[];
+  awayPlayers: RosterPlayerInput[];
+}
+
 export class ApiError extends Error {
   constructor(
     message: string,
@@ -169,6 +200,8 @@ export const api = {
   createMatch: (data: MatchInput) => post<Match>('/api/matches', data),
   updateMatch: (id: string, data: MatchInput) => mutate<Match>('PUT', '/api/matches/' + id, data),
   deleteMatch: (id: string) => mutate<void>('DELETE', '/api/matches/' + id),
+  matchRoster: (matchId: string, signal?: AbortSignal) => get<MatchRoster>('/api/matches/' + matchId + '/roster', signal),
+  saveMatchRoster: (matchId: string, data: MatchRosterInput) => mutate<MatchRoster>('PUT', '/api/matches/' + matchId + '/roster', data),
   teamOptions: async (signal?: AbortSignal): Promise<Team[]> => {
     const teams: Team[] = [];
     let page = 0;

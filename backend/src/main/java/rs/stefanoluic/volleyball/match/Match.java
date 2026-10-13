@@ -29,6 +29,9 @@ public class Match {
     @Column(nullable = false, length = 20)
     private MatchStatus status;
 
+    @Column(name = "roster_version", nullable = false)
+    private int rosterVersion;
+
     @Column(name = "created_at", nullable = false, updatable = false)
     private Instant createdAt;
 
@@ -47,6 +50,8 @@ public class Match {
     }
 
     public UUID getId() { return id; }
+    public int getRosterVersion() { return rosterVersion; }
+    public void advanceRosterVersion() { rosterVersion++; }
     public Team getHomeTeam() { return homeTeam; }
     public Team getAwayTeam() { return awayTeam; }
     public Instant getScheduledAt() { return scheduledAt; }

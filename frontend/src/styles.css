@@ -203,6 +203,12 @@ body {
   background: #fff7f7; border-radius: .75rem;
 }
 .inline-delete-confirmation h3:focus { outline: none; }
+.roster-team { min-width: 0; background: #edf5f8; border-color: #bdd4df; }
+.roster-player { padding: .85rem; border: 1px solid #c9dae6; border-radius: .7rem; background: #f9fcff; }
+.roster-player[data-selected] { border-color: #8ebcaf; background: #e4f3ed; }
+.roster-player-copy { min-width: 0; overflow-wrap: anywhere; }
+.roster-libero { flex-shrink: 0; }
+.roster-libero .mantine-Checkbox-label { font-size: .75rem; }
 .inline-delete-confirmation .mantine-Group-root { flex-wrap: wrap; }
 .auth-card .mantine-Tabs-list {
   padding: .35rem; border: 1px solid #c3d5e8; border-radius: .8rem; background: #dce8f6; gap: .35rem;

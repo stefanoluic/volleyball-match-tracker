@@ -7,6 +7,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import rs.stefanoluic.volleyball.common.exception.ApiException;
 import rs.stefanoluic.volleyball.player.dto.*;
+import rs.stefanoluic.volleyball.match.roster.MatchPlayerRepository;
 import rs.stefanoluic.volleyball.team.Team;
 import rs.stefanoluic.volleyball.team.TeamRepository;
 
@@ -16,10 +17,12 @@ import java.util.UUID;
 public class PlayerService {
     private final PlayerRepository players;
     private final TeamRepository teams;
+    private final MatchPlayerRepository matchPlayers;
 
-    public PlayerService(PlayerRepository players, TeamRepository teams) {
+    public PlayerService(PlayerRepository players, TeamRepository teams, MatchPlayerRepository matchPlayers) {
         this.players = players;
         this.teams = teams;
+        this.matchPlayers = matchPlayers;
     }
 
     @Transactional(readOnly = true)
@@ -59,7 +62,12 @@ public class PlayerService {
     @Transactional
     public void delete(UUID teamId, UUID id) {
         lockTeam(teamId);
-        players.delete(findPlayer(teamId, id));
+        Player player = findPlayer(teamId, id);
+        if (matchPlayers.existsByPlayerId(id)) {
+            throw new ApiException(HttpStatus.CONFLICT,
+                    "Igrača nije moguće obrisati dok je u sastavu neke utakmice.");
+        }
+        players.delete(player);
         players.flush();
     }
 
