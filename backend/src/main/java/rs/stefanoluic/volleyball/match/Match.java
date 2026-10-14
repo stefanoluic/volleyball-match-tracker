@@ -50,6 +50,10 @@ public class Match {
     }
 
     public UUID getId() { return id; }
+    public void start() {
+        if (status != MatchStatus.SCHEDULED) throw new IllegalStateException("Match has already started.");
+        status = MatchStatus.LIVE;
+    }
     public int getRosterVersion() { return rosterVersion; }
     public void advanceRosterVersion() { rosterVersion++; }
     public Team getHomeTeam() { return homeTeam; }

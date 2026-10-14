@@ -10,6 +10,7 @@ import { EditorPage } from '../components/EditorPage';
 import { InlineDeleteConfirmation } from '../components/InlineDeleteConfirmation';
 import { formatMatchTime, matchStatusLabels, toLocalDateTime, toMatchInput, validateMatchInput, type MatchFormInput } from './validation';
 import { MatchRosterPage } from './MatchRosterPage';
+import { MatchPreparationPage } from './MatchPreparationPage';
 
 type Editor = { type: 'create' } | { type: 'edit'; match: Match };
 const emptyInput: MatchFormInput = { homeTeamId: '', awayTeamId: '', localDateTime: '' };
@@ -17,6 +18,7 @@ const inputStyles = { input: { color: 'var(--mantine-color-text)' } };
 
 export function MatchesPage({ canManage }: { canManage: boolean }) {
   const [rosterMatchId, setRosterMatchId] = useState<string | null>(null);
+  const [preparationMatchId, setPreparationMatchId] = useState<string | null>(null);
   const [page, setPage] = useState(0);
   const [result, setResult] = useState<MatchPage | null>(null);
   const [loading, setLoading] = useState(true);
@@ -127,6 +129,8 @@ export function MatchesPage({ canManage }: { canManage: boolean }) {
 
   const teamOptions = options.map((team) => ({ value: team.id, label: team.name + ' · ' + team.city }));
   const locked = busy !== null;
+  if (preparationMatchId) return <MatchPreparationPage matchId={preparationMatchId} canManage={canManage}
+    onBack={() => { setPreparationMatchId(null); setRefresh((value) => value + 1); }} />;
   if (rosterMatchId) return <MatchRosterPage matchId={rosterMatchId} canManage={canManage}
     onBack={() => { setRosterMatchId(null); setRefresh((value) => value + 1); }} />;
   if (editor && canManage) return (
@@ -226,6 +230,10 @@ export function MatchesPage({ canManage }: { canManage: boolean }) {
                       </div>
                       <Button variant="light" size="sm" disabled={locked || !!deleting}
                         onClick={() => setRosterMatchId(match.id)}>Prikaži sastave</Button>
+                      <Button color="teal" variant="light" size="sm" disabled={locked || !!deleting}
+                        onClick={() => setPreparationMatchId(match.id)}>
+                        {match.status === 'SCHEDULED' ? 'Početne postave' : 'Pregled utakmice'}
+                      </Button>
                       {canManage && match.status === 'SCHEDULED' && (deleting?.id === match.id ? (
                         <InlineDeleteConfirmation title="Brisanje utakmice" question={'Obrisati utakmicu ' + title + '?'}
                           warning="Utakmica i njeni sačuvani sastavi će biti trajno obrisani. Timovi i igrači neće biti obrisani."

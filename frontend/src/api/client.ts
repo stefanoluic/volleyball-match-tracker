@@ -123,6 +123,35 @@ export interface MatchRosterInput {
   awayPlayers: RosterPlayerInput[];
 }
 
+export interface LineupPlayer {
+  rotationPosition: number;
+  participant: MatchPlayer;
+}
+
+export interface MatchSet {
+  id: string;
+  number: number;
+  status: 'LIVE' | 'FINISHED';
+  homeScore: number;
+  awayScore: number;
+  firstServingTeamId: string;
+  startedAt: string;
+  homeLineup: LineupPlayer[];
+  awayLineup: LineupPlayer[];
+}
+
+export interface MatchPreparation {
+  roster: MatchRoster;
+  firstSet: MatchSet | null;
+}
+
+export interface StartMatchInput {
+  rosterVersion: number;
+  homeLineup: string[];
+  awayLineup: string[];
+  firstServingTeamId: string;
+}
+
 export class ApiError extends Error {
   constructor(
     message: string,
@@ -202,6 +231,10 @@ export const api = {
   deleteMatch: (id: string) => mutate<void>('DELETE', '/api/matches/' + id),
   matchRoster: (matchId: string, signal?: AbortSignal) => get<MatchRoster>('/api/matches/' + matchId + '/roster', signal),
   saveMatchRoster: (matchId: string, data: MatchRosterInput) => mutate<MatchRoster>('PUT', '/api/matches/' + matchId + '/roster', data),
+  matchPreparation: (matchId: string, signal?: AbortSignal) =>
+    get<MatchPreparation>('/api/matches/' + matchId + '/preparation', signal),
+  startMatch: (matchId: string, data: StartMatchInput) =>
+    post<MatchPreparation>('/api/matches/' + matchId + '/start', data),
   teamOptions: async (signal?: AbortSignal): Promise<Team[]> => {
     const teams: Team[] = [];
     let page = 0;

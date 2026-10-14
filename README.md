@@ -4,8 +4,9 @@ A web application for recording volleyball match events and displaying statistic
 
 The application supports registration, session-based login/logout, administrator
 approval, blocking and permanent deletion of blocked user accounts, and team
-management, team rosters, match scheduling and match participant selection. Live match tracking, statistics
-and reporting are not implemented yet.
+management, team rosters, match scheduling, match participant selection and
+starting the first set with saved initial lineups. Event recording, live updates,
+statistics and reporting are not implemented yet.
 
 ## Stack
 
@@ -112,7 +113,8 @@ Backend tests cover bootstrap, hashing, registration, validation, account status
 authorization, CSRF, session ID rotation, blocking, permanent deletion, logout,
 and team/player CRUD, validation, foreign-key and jersey constraints, concurrent
 roster writes, match scheduling, time-zone conversion, match/team deletion guards,
-match participant snapshots, stale-save protection and role-based access. Integration tests
+match participant snapshots, stale-save protection, first-set lineups, atomic match
+start, duplicate-start protection and role-based access. Integration tests
 require Docker and use a separate temporary PostgreSQL container through
 Testcontainers. They do not modify the development database or its admin account.
 The first run may download the Testcontainers cleanup image.
@@ -157,6 +159,13 @@ number, primary position and match-specific libero designation. Unique constrain
 prevent duplicate participants and repeated jersey numbers within a match's team.
 Deleting a match cascades only its participant rows; referenced players and teams
 cannot be deleted through database foreign keys.
+
+The eighth migration creates volleyball.match_sets and volleyball.set_lineups.
+A set belongs to a match and records its number, status, scores, first-serving
+team and start time. Each lineup row connects a saved match participant to a set
+and a rotational position from 1 to 6. Composite foreign keys require the set and
+participant to belong to the same match and preserve the participant's team.
+Unique constraints prevent repeated players and occupied slots within a set.
 
 ## Accounts and sessions
 
@@ -276,9 +285,9 @@ from application user accounts and have no login credentials.
 - The sixth migration creates volleyball.matches with UUID, two required team
   foreign keys, scheduled_at, status and created_at. Foreign keys restrict team
   deletion, and a database check prevents a team from playing itself.
-- New matches always have SCHEDULED status. LIVE and FINISHED are reserved for
-  later match tracking; no status-transition endpoint or control is available yet.
-  The backend rejects editing/deleting either of those statuses.
+- New matches always have SCHEDULED status. A statistician can start one through
+  first-set preparation, changing it to LIVE. FINISHED is reserved for later match
+  completion. The backend rejects editing/deleting LIVE and FINISHED fixtures.
 - The frontend's Utakmice tab shows a paginated list, newest scheduled time first.
   Forms use dedicated screens and deletion uses inline confirmation.
 - Team selectors are searchable and load all team pages. At least two teams must
@@ -289,7 +298,8 @@ from application user accounts and have no login credentials.
   An ambiguous local time at the autumn clock change uses the browser's earlier
   occurrence. Past dates are allowed for recording historical fixtures.
 - No duplicate-fixture or overlapping-schedule rule is imposed in this version.
-  Set lineups, scores, events and statistics are not implemented yet.
+  First-set initial lineups and a 0:0 score are recorded at start; score changes,
+  further sets, events and statistics are not implemented yet.
 - Changing either team requires clearing and saving both participant rosters first.
   The date/time may still be edited with saved rosters.
 - Deleting a scheduled match also deletes its saved participant rows. The
@@ -308,8 +318,8 @@ from application user accounts and have no login credentials.
 - Open Prikaži sastave on a match card to see both teams on a dedicated screen.
   Statisticians can select participants and designate liberos for scheduled
   matches; coaches have read-only access to the saved participants.
-- Partial and empty drafts are allowed. No starting six, court positions,
-  rotations or substitutions are recorded yet; participants are not a set lineup.
+- Partial and empty drafts are allowed. Participants are not a set lineup;
+  starting sixes are selected separately before starting the match.
 - Each side may have at most two designated liberos, following rule 19.1.1 in the
   [FIVB rules](https://www.fivb.com/wp-content/uploads/2025/01/FIVB-Volleyball_Rules2025_2028-EN-v05.pdf).
   A player's primary LIBERO position preselects the checkbox, which remains editable
@@ -335,6 +345,42 @@ from application user accounts and have no login credentials.
 The PUT body contains version, homePlayers and awayPlayers. Each player item
 contains playerId and isLibero; names, jersey numbers and positions are taken from
 the database, not accepted as editable client snapshots.
+
+## First-set preparation and match start
+
+- Open Početne postave on a scheduled match card. First save each team's match
+  participants using Prikaži sastave; adding a player to a team does not register
+  that player for an existing match.
+- For each team, fill rotational positions 1 to 6 with six different saved
+  participants not designated as liberos. Primary positions are descriptive;
+  the match-specific libero flag determines eligibility for this lineup.
+- Select which team serves first, based on the toss. Position 1 is back-right;
+  the slots describe rotational order, not roles such as setter or opposite.
+- Počni utakmicu validates the draft and shows an inline confirmation. Potvrdi
+  početak saves both sixes and the first-serving team, creates set 1 at 0:0 with
+  LIVE status and a start timestamp, and changes the match status to LIVE.
+- All changes are committed in one database transaction under the match lock.
+  Starting with an outdated roster version, a non-scheduled match or a match
+  already containing a set returns HTTP 409. Repeated or simultaneous starts
+  cannot create a second first set.
+- After start, the match's participants and initial lineups cannot be changed
+  through the API. Both statistician and coach can use Pregled utakmice to read
+  the score and initial lineups. No reset-to-scheduled action exists.
+- Preparation drafts are local to the open screen and saved only when starting.
+  Navigation/reload asks before discarding a partial draft. Failed requests keep
+  the selection; loading the current state is an explicit action.
+- Further sets, score changes, automatic rotation, ordinary substitutions and
+  libero replacements are not implemented yet. Initial lineups do not represent
+  a continuously updated court state.
+
+| Method | Path | Access |
+| --- | --- | --- |
+| GET | /api/matches/{id}/preparation | Active statistician or coach |
+| POST | /api/matches/{id}/start | Active statistician, CSRF required; scheduled only |
+
+The start body contains rosterVersion, homeLineup, awayLineup and
+firstServingTeamId. The lineup arrays contain six match participant IDs
+(match_players.id, not players.id), ordered by rotational position 1 through 6.
 
 ## Initial administrator
 
