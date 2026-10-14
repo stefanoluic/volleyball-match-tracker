@@ -29,6 +29,8 @@ const firstSet: MatchSet = { id: 'set', number: 1, status: 'LIVE', homeScore: 0,
 const started: MatchPreparation = { ...preparation, roster: { ...preparation.roster, match: { ...match, status: 'LIVE' } }, firstSet };
 beforeEach(() => {
   vi.spyOn(api, 'matchPreparation').mockResolvedValue(preparation);
+  vi.spyOn(api, 'setScore').mockResolvedValue({ setId: firstSet.id, version: 0, homeScore: 0, awayScore: 0,
+    matchStatus: 'LIVE', setStatus: 'LIVE', canRecord: true, lastActivePoint: null, points: [] });
   vi.spyOn(notifications, 'show').mockReturnValue('notice');
 });
 afterEach(() => vi.restoreAllMocks());

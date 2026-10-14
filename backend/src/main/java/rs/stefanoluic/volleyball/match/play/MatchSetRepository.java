@@ -7,4 +7,5 @@ import java.util.UUID;
 public interface MatchSetRepository extends JpaRepository<MatchSet, UUID> {
     Optional<MatchSet> findByMatchIdAndNumber(UUID matchId, int number);
     boolean existsByMatchId(UUID matchId);
+    Optional<MatchSet> findByIdAndMatchId(UUID id, UUID matchId);
 }

@@ -5,8 +5,9 @@ A web application for recording volleyball match events and displaying statistic
 The application supports registration, session-based login/logout, administrator
 approval, blocking and permanent deletion of blocked user accounts, and team
 management, team rosters, match scheduling, match participant selection and
-starting the first set with saved initial lineups. Event recording, live updates,
-statistics and reporting are not implemented yet.
+starting the first set with saved initial lineups, point recording and undo.
+Detailed event classification, automatic live updates, statistics and reporting
+are not implemented yet.
 
 ## Stack
 
@@ -114,7 +115,8 @@ authorization, CSRF, session ID rotation, blocking, permanent deletion, logout,
 and team/player CRUD, validation, foreign-key and jersey constraints, concurrent
 roster writes, match scheduling, time-zone conversion, match/team deletion guards,
 match participant snapshots, stale-save protection, first-set lineups, atomic match
-start, duplicate-start protection and role-based access. Integration tests
+start, duplicate-start protection, point history, last-point undo, idempotent retries,
+concurrent score writes and role-based access. Integration tests
 require Docker and use a separate temporary PostgreSQL container through
 Testcontainers. They do not modify the development database or its admin account.
 The first run may download the Testcontainers cleanup image.
@@ -166,6 +168,12 @@ team and start time. Each lineup row connects a saved match participant to a set
 and a rotational position from 1 to 6. Composite foreign keys require the set and
 participant to belong to the same match and preserve the participant's team.
 Unique constraints prevent repeated players and occupied slots within a set.
+
+The ninth migration creates volleyball.set_points and adds score_version and
+last_point_sequence to match_sets. Point rows store the winning team, sequence,
+score after the original entry, creation time and optional cancellation time.
+Command identifiers are unique per set; cancellation metadata remains with the
+original point instead of deleting its history.
 
 ## Accounts and sessions
 
@@ -298,8 +306,9 @@ from application user accounts and have no login credentials.
   An ambiguous local time at the autumn clock change uses the browser's earlier
   occurrence. Past dates are allowed for recording historical fixtures.
 - No duplicate-fixture or overlapping-schedule rule is imposed in this version.
-  First-set initial lineups and a 0:0 score are recorded at start; score changes,
-  further sets, events and statistics are not implemented yet.
+  First-set initial lineups and a 0:0 score are recorded at start. Points can then
+  be added and undone. Further sets, detailed action types and statistics are
+  not implemented yet.
 - Changing either team requires clearing and saving both participant rosters first.
   The date/time may still be edited with saved rosters.
 - Deleting a scheduled match also deletes its saved participant rows. The
@@ -369,7 +378,7 @@ the database, not accepted as editable client snapshots.
 - Preparation drafts are local to the open screen and saved only when starting.
   Navigation/reload asks before discarding a partial draft. Failed requests keep
   the selection; loading the current state is an explicit action.
-- Further sets, score changes, automatic rotation, ordinary substitutions and
+- Further sets, automatic rotation, ordinary substitutions and
   libero replacements are not implemented yet. Initial lineups do not represent
   a continuously updated court state.
 
@@ -381,6 +390,47 @@ the database, not accepted as editable client snapshots.
 The start body contains rosterVersion, homeLineup, awayLineup and
 firstServingTeamId. The lineup arrays contain six match participant IDs
 (match_players.id, not players.id), ordered by rotational position 1 through 6.
+
+## Points and score corrections
+
+- In Pregled utakmice, statisticians use Poen za domaćina or Poen za gosta.
+  Recording stores a point and updates its set's score in one transaction.
+  The current version records only the winning team, not a player or action type.
+- Poništi poslednji poen asks for inline confirmation and cancels only the latest
+  non-cancelled point. The score decreases on that side; previous points may then
+  be undone in reverse order. Cancelled entries remain visible and never count
+  toward the current score. Scores cannot become negative.
+- The view shows the latest 20 point entries, newest first, including cancelled
+  rows. The server separately returns the last active point, even if it is older
+  than the visible history. Sequence numbers are never reused after cancellation.
+  A row's score-after-entry is historical, not recalculated after later corrections.
+- New writes require both match and set to be LIVE. The set ID is checked against
+  the match in the URL, and the scoring team must belong to that match. Coaches
+  can read the score/history but have no write access; admins have no access.
+- Mutations share the match lock and include the current score version. Successful
+  additions and cancellations each increment that version. Stale requests return
+  HTTP 409 without changing the score or history.
+- Each addition/undo also has a requestId. Repeating an already committed command
+  returns the current state without applying it again, including after subsequent
+  points or cancellations. Reusing an ID with a different payload returns HTTP 409.
+- Buttons and navigation are disabled during a write. Network/5xx failures retain
+  the original command for Ponovi isti zahtev; the client does not generate a new
+  identifier or automatically retry an uncertain write. Other failures require
+  explicit score refresh before another entry.
+- Score/history reads use a repeatable-read snapshot. Osveži rezultat reloads
+  the current state; automatic polling/WebSocket updates are not implemented yet.
+- Set completion and the next set are not implemented. Points do not automatically
+  finish a set or match, and no winning-score cutoff is enforced in this version.
+
+| Method | Path | Access |
+| --- | --- | --- |
+| GET | /api/matches/{matchId}/sets/{setId}/score | Active statistician or coach |
+| POST | /api/matches/{matchId}/sets/{setId}/points | Active statistician, CSRF required; match and set LIVE |
+| POST | /api/matches/{matchId}/sets/{setId}/points/{pointId}/undo | Active statistician, CSRF required; match and set LIVE |
+
+Point input contains requestId, version and scoringTeamId. Undo input contains
+requestId and version; the point ID is in the URL. Completed-command replays are
+read-only responses and remain safe even if the match/set was subsequently closed.
 
 ## Initial administrator
 

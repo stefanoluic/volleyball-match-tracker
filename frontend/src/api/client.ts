@@ -152,6 +152,39 @@ export interface StartMatchInput {
   firstServingTeamId: string;
 }
 
+export interface SetPoint {
+  id: string;
+  sequenceNumber: number;
+  scoringTeamId: string;
+  homeScoreAfter: number;
+  awayScoreAfter: number;
+  createdAt: string;
+  cancelledAt: string | null;
+}
+
+export interface SetScore {
+  setId: string;
+  version: number;
+  homeScore: number;
+  awayScore: number;
+  matchStatus: MatchStatus;
+  setStatus: 'LIVE' | 'FINISHED';
+  canRecord: boolean;
+  lastActivePoint: SetPoint | null;
+  points: SetPoint[];
+}
+
+export interface AddPointInput {
+  requestId: string;
+  version: number;
+  scoringTeamId: string;
+}
+
+export interface UndoPointInput {
+  requestId: string;
+  version: number;
+}
+
 export class ApiError extends Error {
   constructor(
     message: string,
@@ -235,6 +268,12 @@ export const api = {
     get<MatchPreparation>('/api/matches/' + matchId + '/preparation', signal),
   startMatch: (matchId: string, data: StartMatchInput) =>
     post<MatchPreparation>('/api/matches/' + matchId + '/start', data),
+  setScore: (matchId: string, setId: string, signal?: AbortSignal) =>
+    get<SetScore>('/api/matches/' + matchId + '/sets/' + setId + '/score', signal),
+  addPoint: (matchId: string, setId: string, data: AddPointInput) =>
+    post<SetScore>('/api/matches/' + matchId + '/sets/' + setId + '/points', data),
+  undoPoint: (matchId: string, setId: string, pointId: string, data: UndoPointInput) =>
+    post<SetScore>('/api/matches/' + matchId + '/sets/' + setId + '/points/' + pointId + '/undo', data),
   teamOptions: async (signal?: AbortSignal): Promise<Team[]> => {
     const teams: Team[] = [];
     let page = 0;

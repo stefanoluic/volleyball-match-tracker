@@ -7,6 +7,7 @@ import { EditorPage } from '../components/EditorPage';
 import { positionLabels } from '../players/validation';
 import { formatMatchTime, matchStatusLabels } from './validation';
 import { hasStartDraft, initialStartInput, rotationLabels, validateStartInput } from './lineup';
+import { MatchScoreboard } from './MatchScoreboard';
 
 function TeamLineup({ team, ids, disabled, error, onChange }: {
   team: TeamRoster; ids: string[]; disabled: boolean; error?: string; onChange: (ids: string[]) => void;
@@ -59,6 +60,7 @@ export function MatchPreparationPage({ matchId, canManage, onBack }: {
   const [startError, setStartError] = useState('');
   const [fields, setFields] = useState<Record<string, string>>({});
   const [busy, setBusy] = useState(false);
+  const [scoringBusy, setScoringBusy] = useState(false);
   const [confirming, setConfirming] = useState(false);
   const [navigation, setNavigation] = useState<'back' | 'reload' | null>(null);
   useEffect(() => {
@@ -74,7 +76,7 @@ export function MatchPreparationPage({ matchId, canManage, onBack }: {
   const editable = !!data && canManage && data.roster.match.status === 'SCHEDULED' && !data.firstSet;
   const dirty = editable && !!input && hasStartDraft(input);
   function navigate(destination: 'back' | 'reload') {
-    if (busy) return;
+    if (busy || scoringBusy) return;
     setConfirming(false);
     if (dirty) setNavigation(destination);
     else if (destination === 'back') onBack();
@@ -118,12 +120,12 @@ export function MatchPreparationPage({ matchId, canManage, onBack }: {
   const change = (next: StartMatchInput) => { setInput(next); setFields({}); setStartError(''); };
   return <EditorPage title={title} category={match.homeTeam.name + ' — ' + match.awayTeam.name}
     description={formatMatchTime(match.scheduledAt) + ' · ' + matchStatusLabels[match.status]}
-    icon={<IconBallVolleyball size={28} aria-hidden="true" />} busy={busy}
+    icon={<IconBallVolleyball size={28} aria-hidden="true" />} busy={busy || scoringBusy}
     breadcrumbs={[{ label: 'Utakmice', onClick: () => navigate('back') }]}>
     <Stack gap="xl">
       <Group justify="space-between">
         <Text size="sm" c="dimmed">Prvi set · početna šestorka i redosled rotacije</Text>
-        <Button variant="light" size="xs" disabled={busy} leftSection={<IconRefresh size={15} />}
+        <Button variant="light" size="xs" disabled={busy || scoringBusy} leftSection={<IconRefresh size={15} />}
           onClick={() => navigate('reload')}>Učitaj trenutno stanje</Button>
       </Group>
       {startError && <Alert color="red" role="alert">{startError}</Alert>}
@@ -136,17 +138,12 @@ export function MatchPreparationPage({ matchId, canManage, onBack }: {
           }}>Odbaci izmene</Button></Group>
       </Alert>}
       {firstSet ? <>
-        <Paper component="section" withBorder p="lg" className="roster-team" aria-label="Rezultat prvog seta">
-          <Group justify="space-between"><Title order={2} size="h3">Set {firstSet.number}</Title>
-            <Badge color="teal">{firstSet.status === 'LIVE' ? 'U toku' : 'Završen'}</Badge></Group>
-          <Text size="xl" fw={700} ta="center" my="md">{match.homeTeam.name} {firstSet.homeScore} : {firstSet.awayScore} {match.awayTeam.name}</Text>
-          <Text size="sm">Prvi servis: {firstSet.firstServingTeamId === match.homeTeam.id ? match.homeTeam.name : match.awayTeam.name}</Text>
-        </Paper>
+        <MatchScoreboard match={match} set={firstSet} canManage={canManage} onBusyChange={setScoringBusy} />
         <SimpleGrid cols={{ base: 1, md: 2 }}>
           <SavedLineup team={roster.home} rows={firstSet.homeLineup} />
           <SavedLineup team={roster.away} rows={firstSet.awayLineup} />
         </SimpleGrid>
-        <Alert color="blue">Prikazane su početne postave. Unos poena, izmene i ulasci libera još nisu implementirani.</Alert>
+        <Alert color="blue">Prikazane su početne postave. Izmene igrača, ulasci libera i automatska rotacija još nisu implementirani.</Alert>
       </> : editable ? <form aria-label="Priprema prvog seta" onSubmit={prepare} noValidate>
         <Stack gap="xl">
           <Alert color="blue">Najpre sačuvajte učesnike preko „Prikaži sastave“. Ovde ih raspoređujete za prvi set.
@@ -173,7 +170,7 @@ export function MatchPreparationPage({ matchId, canManage, onBack }: {
         </Stack>
       </form> : <Alert color="blue">Početne postave još nisu sačuvane. Statističar ih bira pri pokretanju utakmice.</Alert>}
       <Group justify="flex-end" className="editor-actions">
-        <Button variant="default" disabled={busy} onClick={() => navigate('back')}>Nazad na utakmice</Button>
+        <Button variant="default" disabled={busy || scoringBusy} onClick={() => navigate('back')}>Nazad na utakmice</Button>
       </Group>
     </Stack>
   </EditorPage>;
