@@ -22,6 +22,9 @@ import rs.stefanoluic.volleyball.common.exception.ApiException;
 import rs.stefanoluic.volleyball.match.*;
 import rs.stefanoluic.volleyball.match.play.*;
 import rs.stefanoluic.volleyball.match.play.score.dto.*;
+import rs.stefanoluic.volleyball.match.roster.MatchPlayer;
+import rs.stefanoluic.volleyball.match.roster.MatchPlayerRepository;
+import rs.stefanoluic.volleyball.player.*;
 import rs.stefanoluic.volleyball.team.*;
 import rs.stefanoluic.volleyball.user.*;
 import tools.jackson.databind.ObjectMapper;
@@ -49,6 +52,9 @@ class SetScoreIntegrationTest {
     @Autowired MatchRepository matches;
     @Autowired MatchSetRepository sets;
     @Autowired SetPointRepository points;
+    @Autowired PlayerRepository players;
+    @Autowired MatchPlayerRepository participants;
+    @Autowired SetLineupRepository lineups;
     @Autowired SetScoreService service;
     @Autowired TeamRepository teams;
     @Autowired UserRepository users;
@@ -62,7 +68,7 @@ class SetScoreIntegrationTest {
     private static final String PASSWORD = "TestOnly!Password";
 
     @BeforeEach void seed() {
-        matches.deleteAll(); teams.deleteAll(); users.deleteAll();
+        matches.deleteAll(); players.deleteAll(); teams.deleteAll(); users.deleteAll();
         home = teams.saveAndFlush(new Team("Vojvodina", "Novi Sad"));
         away = teams.saveAndFlush(new Team("Partizan", "Beograd"));
         match = new Match(home, away, Instant.now()); match.start(); match = matches.saveAndFlush(match);
@@ -89,6 +95,84 @@ class SetScoreIntegrationTest {
     private void conflict(org.assertj.core.api.ThrowableAssert.ThrowingCallable action) {
         assertThatThrownBy(action).isInstanceOf(ApiException.class).satisfies(error ->
                 assertThat(((ApiException) error).getStatus().value()).isEqualTo(409));
+    }
+
+    private void startingSixes() {
+        for (Team team : List.of(home, away)) for (int position = 1; position <= 6; position++) {
+            var player = players.saveAndFlush(new Player(team, "Igrač", "Test", position, PlayerPosition.SETTER));
+            var participant = participants.saveAndFlush(new MatchPlayer(match, team, player, false));
+            lineups.saveAndFlush(new SetLineup(set, match, participant, position));
+        }
+    }
+
+    @Test void courtTracksSideOutAndUndoRestoresServerAndOriginalSixes() throws Exception {
+        startingSixes();
+        var initial = service.get(match.getId(), set.getId()).court();
+        assertThat(initial.server().jerseyNumber()).isEqualTo(1);
+        assertThat(initial.servingTeamId()).isEqualTo(home.getId());
+        assertThat(initial.homeLineup()).hasSize(6);
+        assertThat(initial.awayLineup()).hasSize(6);
+        assertThat(add(0, home).court()).isEqualTo(initial);
+        var request = addRequest(1, away);
+        var sideOut = service.add(match.getId(), set.getId(), request);
+        assertThat(sideOut.court().servingTeamId()).isEqualTo(away.getId());
+        assertThat(sideOut.court().server().jerseyNumber()).isEqualTo(2);
+        assertThat(sideOut.court().homeLineup()).isEqualTo(initial.homeLineup());
+        assertThat(sideOut.court().awayLineup().stream().map(row -> row.participant().jerseyNumber()).toList())
+                .containsExactly(2, 3, 4, 5, 6, 1);
+        assertThat(service.add(match.getId(), set.getId(), request).court()).isEqualTo(sideOut.court());
+        mvc.perform(get(path() + "/score").session(login(UserRole.COACH))).andExpect(status().isOk())
+                .andExpect(jsonPath("$.court.server.jerseyNumber").value(2))
+                .andExpect(jsonPath("$.court.servingTeamId").value(away.getId().toString()));
+        var undoRequest = new UndoPointRequest(UUID.randomUUID(), 2);
+        var restored = service.undo(match.getId(), set.getId(), sideOut.lastActivePoint().id(), undoRequest);
+        assertThat(restored.court()).isEqualTo(initial);
+        assertThat(service.undo(match.getId(), set.getId(), sideOut.lastActivePoint().id(), undoRequest).court()).isEqualTo(initial);
+        assertThat(service.get(match.getId(), set.getId()).court()).isEqualTo(initial);
+        var switchedAgain = add(3, away);
+        assertThat(switchedAgain.court()).isEqualTo(sideOut.court());
+        assertThat(lineups.findBySetIdOrderByRotationPositionAsc(set.getId()).stream()
+                .filter(row -> row.getRotationPosition() == 1).map(row -> row.getParticipant().getJerseyNumber()).toList())
+                .containsExactly(1, 1);
+    }
+
+    @Test void rotationUsesAllActivePointsNotOnlyTwentyVisibleHistoryRows() {
+        startingSixes();
+        var result = add(0, away);
+        for (int version = 1; version < 23; version++) result = add(version, away);
+        assertThat(result.points()).hasSize(20);
+        assertThat(result.court().server().jerseyNumber()).isEqualTo(2);
+        var servingHome = add(23, home);
+        assertThat(servingHome.court().server().jerseyNumber()).isEqualTo(2);
+        assertThat(servingHome.court().servingTeamId()).isEqualTo(home.getId());
+    }
+
+    @Test void firstServeCanBelongToAwayAndWinningOrClosedSetsHaveNoNextServer() {
+        sets.deleteAll();
+        set = sets.saveAndFlush(new MatchSet(match, 1, away));
+        startingSixes();
+        assertThat(service.get(match.getId(), set.getId()).court().servingTeamId()).isEqualTo(away.getId());
+        assertThat(service.get(match.getId(), set.getId()).court().server().jerseyNumber()).isEqualTo(1);
+        SetScoreResponse result = null;
+        for (int version = 0; version < 25; version++) result = add(version, home);
+        assertThat(result.court().server()).isNull();
+        assertThat(result.court().servingTeamId()).isNull();
+        assertThat(result.court().homeLineup()).hasSize(6);
+        var restored = undo(25, result.lastActivePoint().id());
+        assertThat(restored.court().server().jerseyNumber()).isEqualTo(2);
+        jdbc.update("UPDATE volleyball.match_sets SET status='FINISHED' WHERE id=?", set.getId());
+        assertThat(service.get(match.getId(), set.getId()).court().server()).isNull();
+        assertThat(service.get(match.getId(), set.getId()).court().servingTeamId()).isNull();
+    }
+
+    @Test void incompleteStartingLineupDoesNotInventCourtState() {
+        assertThat(service.get(match.getId(), set.getId()).court()).isNull();
+    }
+
+    @Test void scoreWithoutMatchingPointHistoryDoesNotInventServer() {
+        startingSixes();
+        jdbc.update("UPDATE volleyball.match_sets SET home_score=1 WHERE id=?", set.getId());
+        assertThat(service.get(match.getId(), set.getId()).court()).isNull();
     }
 
     @Test void initialScoreIsReadableByCoachAndNoPointCanBeUndone() throws Exception {

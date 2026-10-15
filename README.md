@@ -5,8 +5,8 @@ A web application for recording volleyball match events and displaying statistic
 The application supports registration, session-based login/logout, administrator
 approval, blocking and permanent deletion of blocked user accounts, and team
 management, team rosters, match scheduling, match participant selection and
-starting sets with saved initial lineups, point recording and undo, set completion
-and match completion.
+starting sets with saved initial lineups, point recording and undo, automatic
+service/rotation tracking, set completion and match completion.
 Detailed event classification, automatic live updates, statistics and reporting
 are not implemented yet.
 
@@ -117,7 +117,7 @@ and team/player CRUD, validation, foreign-key and jersey constraints, concurrent
 roster writes, match scheduling, time-zone conversion, match/team deletion guards,
 match participant snapshots, stale-save protection, first-set lineups, atomic match
 start, duplicate-start protection, point history, last-point undo, idempotent retries,
-concurrent score writes, deuce/tie-break rules, complete 3:0/3:2 match flows,
+concurrent score writes, server/rotation recovery after undo, deuce/tie-break rules, complete 3:0/3:2 match flows,
 set transitions and role-based access. Integration tests
 require Docker and use a separate temporary PostgreSQL container through
 Testcontainers. They do not modify the development database or its admin account.
@@ -267,8 +267,8 @@ cascading deletion. Teams referenced by matches also cannot be deleted.
   across different teams.
 - Primary positions are SETTER (Tehničar), OUTSIDE_HITTER (Primač servisa),
   OPPOSITE (Korektor), MIDDLE_BLOCKER (Srednji bloker) and LIBERO (Libero).
-  A primary position is not a rotation slot; rotation, match lineups and captain
-  designation are outside this version.
+  A primary position is not a rotation slot. Match lineups and rotational order
+  are tracked separately; captain designation is not implemented.
 - Rosters are paginated (20 per page in the interface), sorted by jersey number.
 - Player changes and team deletion lock the same team row to serialize competing
   changes. Database constraints also enforce jersey uniqueness and team integrity.
@@ -386,9 +386,9 @@ the database, not accepted as editable client snapshots.
 - Preparation drafts are local to the open screen and saved only when starting.
   Navigation/reload asks before discarding a partial draft. Failed requests keep
   the selection; loading the current state is an explicit action.
-- Automatic rotation, ordinary substitutions and
-  libero replacements are not implemented yet. Initial lineups do not represent
-  a continuously updated court state.
+- Initial lineups remain unchanged. The score view separately displays the
+  rotational order derived from recorded points. Ordinary substitutions and
+  libero replacements are not implemented yet.
 
 | Method | Path | Access |
 | --- | --- | --- |
@@ -471,7 +471,7 @@ read-only responses and remain safe even if the match/set was subsequently close
 - Confirmation of a third set win sets the match to FINISHED. All sets remain
   available for read-only review by statisticians and coaching staff.
 - Only the normal best-of-five match flow is modeled. Forfeits, exceptional match
-  termination, score correction after confirmed completion and live court state
+  termination, score correction after confirmed completion and player replacements
   are outside this version.
 
 | Method | Path | Access |
@@ -484,6 +484,31 @@ previousSetVersion. Completion input contains requestId and version.
 Preparation responses retain firstSet for compatibility and also include all
 sets, currentSet, nextSetNumber, homeSetsWon and awaySetsWon. Set responses include
 scoreVersion, finishedAt and the winnerTeamId of a confirmed completed set.
+
+## Rotation and service
+
+- The score response includes court: servingTeamId, server and both teams' six
+  players ordered by rotationPosition. The UI lays out positions 4–3–2 by the net
+  and 5–6–1 behind them, viewed separately from each team's side.
+- The first server is the player in position 1 of the selected first-serving team.
+  Winning another rally while serving leaves that team's order unchanged. When
+  the receiving team wins a rally, only that team rotates: 2→1→6→5→4→3→2.
+  Its new position-1 player serves next (FIVB rules 7.6 and 12.2).
+- Both orders and the server are derived on the backend from the saved initial
+  lineups and ALL non-cancelled points in sequence, not only the 20 visible entries.
+  Undo, idempotent retries and page reloads therefore produce the same state.
+  Starting another set uses that set's own lineups and first-serving team.
+- At a winning score or after completion, no next server is shown. A set-winning
+  rally does not trigger a further service rotation. Undoing that rally before
+  confirmation restores the server and positions from the remaining point history.
+- The display is rotational order, not physical player locations during a rally.
+  It still uses the starting six: substitutions, libero replacements, exceptional
+  service-order corrections and sanction-specific rotation rules are not modeled.
+- Reads share the score's transaction/snapshot. No new database migration is needed.
+  Sets with missing lineups or scores inconsistent with their point history return
+  court=null rather than inventing a server. The UI explains unavailable state and
+  hides potentially stale court data after a failed write until retry/refresh.
+  Coaches have the same read-only view, refreshed manually.
 
 ## Initial administrator
 

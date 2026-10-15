@@ -34,7 +34,7 @@ beforeEach(() => {
   vi.spyOn(api, 'matchPreparation').mockResolvedValue(preparation);
   vi.spyOn(api, 'setScore').mockResolvedValue({ setId: firstSet.id, version: 0, homeScore: 0, awayScore: 0,
     matchStatus: 'LIVE', setStatus: 'LIVE', canRecord: true, lastActivePoint: null, points: [],
-    canUndo: false, canFinish: false, winnerTeamId: null });
+    canUndo: false, canFinish: false, winnerTeamId: null, court: null });
   vi.spyOn(notifications, 'show').mockReturnValue('notice');
 });
 afterEach(() => vi.restoreAllMocks());

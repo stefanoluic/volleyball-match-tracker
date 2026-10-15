@@ -1,8 +1,8 @@
 import { MantineProvider } from '@mantine/core';
 import { notifications } from '@mantine/notifications';
-import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, beforeEach, expect, test, vi } from 'vitest';
-import { api, ApiError, type Match, type MatchPreparation, type MatchSet, type SetPoint, type SetScore, type Team } from '../../src/api/client';
+import { api, ApiError, type LineupPlayer, type Match, type MatchPreparation, type MatchSet, type SetPoint, type SetScore, type Team } from '../../src/api/client';
 import { MatchScoreboard } from '../../src/matches/MatchScoreboard';
 import { theme } from '../../src/theme';
 
@@ -15,7 +15,7 @@ const set: MatchSet = { id: 'set', number: 1, status: 'LIVE', homeScore: 0, away
   scoreVersion: 0, finishedAt: null, winnerTeamId: null };
 const zero: SetScore = { setId: set.id, version: 0, homeScore: 0, awayScore: 0,
   matchStatus: 'LIVE', setStatus: 'LIVE', canRecord: true, lastActivePoint: null, points: [],
-  canUndo: false, canFinish: false, winnerTeamId: null };
+  canUndo: false, canFinish: false, winnerTeamId: null, court: null };
 const point: SetPoint = { id: 'point', sequenceNumber: 1, scoringTeamId: home.id,
   homeScoreAfter: 1, awayScoreAfter: 0, createdAt: home.createdAt, cancelledAt: null };
 const one: SetScore = { ...zero, version: 1, homeScore: 1, lastActivePoint: point, points: [point], canUndo: true };
@@ -180,4 +180,88 @@ test('uncertain set completion retries the same identifier and never closes a di
   fireEvent.click(await screen.findByRole('button', { name: 'Ponovi isti zahtev' }));
   await screen.findByText('Završen');
   expect(finish.mock.calls[1]).toEqual(finish.mock.calls[0]);
+});
+
+function sixes(team: Team, turns = 0): LineupPlayer[] {
+  return Array.from({ length: 6 }, (_, index) => ({ rotationPosition: (index - turns + 6) % 6 + 1,
+    participant: { id: team.id + '-entry-' + (index + 1), playerId: team.id + '-player-' + (index + 1),
+      teamId: team.id, firstName: team.id === home.id ? 'Marko' : 'Petar', lastName: 'Marković',
+      jerseyNumber: index + 1, position: 'SETTER' as const, isLibero: false } }))
+    .sort((a, b) => a.rotationPosition - b.rotationPosition);
+}
+const homeSix = sixes(home), awaySix = sixes(away);
+const initialCourt: SetScore = { ...zero, court: { servingTeamId: home.id, server: homeSix[0].participant,
+  homeLineup: homeSix, awayLineup: awaySix } };
+const sideOutCourt: SetScore = { ...one, homeScore: 0, awayScore: 1,
+  lastActivePoint: { ...point, scoringTeamId: away.id }, points: [{ ...point, scoringTeamId: away.id }],
+  court: { servingTeamId: away.id, server: sixes(away, 1)[0].participant,
+    homeLineup: homeSix, awayLineup: sixes(away, 1) } };
+
+test('court shows twelve players in court order and highlights the position-one server', async () => {
+  vi.mocked(api.setScore).mockResolvedValue(initialCourt);
+  renderBoard(); await loaded();
+  expect(screen.getByText('Na servisu: Vojvodina · #1 Marko Marković')).toBeTruthy();
+  const homeCourt = screen.getByRole('list', { name: 'Mesta u rotaciji · Vojvodina' });
+  expect(within(homeCourt).getAllByRole('listitem').map((row) => row.getAttribute('aria-label')))
+    .toEqual([4, 3, 2, 5, 6, 1].map((n) => 'Pozicija ' + n + ' · #' + n + ' Marko Marković'));
+  expect(within(homeCourt).getByRole('listitem', { name: 'Pozicija 1 · #1 Marko Marković' }).getAttribute('aria-current')).toBe('true');
+  expect(screen.getAllByRole('listitem')).toHaveLength(12);
+  expect(screen.getAllByText('Servira')).toHaveLength(1);
+});
+test('side-out uses server response to rotate only the receiving winner', async () => {
+  vi.mocked(api.setScore).mockResolvedValue(initialCourt);
+  vi.spyOn(api, 'addPoint').mockResolvedValue(sideOutCourt);
+  renderBoard(); await loaded();
+  fireEvent.click(screen.getByRole('button', { name: 'Poen za gosta' }));
+  await screen.findByText('Na servisu: Partizan · #2 Petar Marković');
+  const awayCourt = screen.getByRole('region', { name: 'Raspored · Partizan' });
+  expect(within(awayCourt).getByRole('listitem', { name: 'Pozicija 1 · #2 Petar Marković' }).getAttribute('aria-current')).toBe('true');
+  const homeCourt = screen.getByRole('region', { name: 'Raspored · Vojvodina' });
+  expect(within(homeCourt).getByRole('listitem', { name: 'Pozicija 1 · #1 Marko Marković' })).toBeTruthy();
+  expect(within(homeCourt).queryByText('Servira')).toBeNull();
+});
+test('undo restores previous serving team and rotational positions', async () => {
+  vi.mocked(api.setScore).mockResolvedValue(sideOutCourt);
+  vi.spyOn(api, 'undoPoint').mockResolvedValue({ ...initialCourt, version: 2 });
+  renderBoard(); await screen.findByText('Na servisu: Partizan · #2 Petar Marković');
+  openUndo(); confirmUndo();
+  await screen.findByText('Na servisu: Vojvodina · #1 Marko Marković');
+  const awayCourt = screen.getByRole('region', { name: 'Raspored · Partizan' });
+  expect(within(awayCourt).getByRole('listitem', { name: 'Pozicija 1 · #1 Petar Marković' })).toBeTruthy();
+});
+test('coach refreshes authoritative court without any court editing controls', async () => {
+  vi.mocked(api.setScore).mockResolvedValue(initialCourt);
+  renderBoard(false); await loaded();
+  expect(screen.getByText('Na servisu: Vojvodina · #1 Marko Marković')).toBeTruthy();
+  expect(screen.queryByRole('button', { name: 'Poen za gosta' })).toBeNull();
+  vi.mocked(api.setScore).mockResolvedValue(sideOutCourt);
+  fireEvent.click(screen.getByRole('button', { name: 'Osveži rezultat' }));
+  await screen.findByText('Na servisu: Partizan · #2 Petar Marković');
+});
+test('uncertain writes hide potentially stale court until the original request succeeds', async () => {
+  vi.mocked(api.setScore).mockResolvedValue(initialCourt);
+  vi.spyOn(api, 'addPoint').mockRejectedValueOnce(new Error('lost')).mockResolvedValue(sideOutCourt);
+  renderBoard(); await loaded();
+  fireEvent.click(screen.getByRole('button', { name: 'Poen za gosta' }));
+  const retry = await screen.findByRole('button', { name: 'Ponovi isti zahtev' });
+  expect(screen.queryByRole('region', { name: 'Rotacioni raspored' })).toBeNull();
+  fireEvent.click(retry);
+  await screen.findByText('Na servisu: Partizan · #2 Petar Marković');
+});
+test('winning and finished sets do not highlight or announce a next server', async () => {
+  vi.mocked(api.setScore).mockResolvedValue({ ...winning, court: { ...initialCourt.court!, servingTeamId: null, server: null } });
+  vi.spyOn(api, 'finishSet').mockResolvedValue(completed);
+  renderBoard();
+  await screen.findByText('Čeka se potvrda kraja seta — nema narednog servisa.');
+  expect(screen.queryByText(/^Na servisu:/)).toBeNull();
+  expect(screen.queryByText('Servira')).toBeNull();
+  fireEvent.click(screen.getByRole('button', { name: 'Završi set' }));
+  fireEvent.click(screen.getByRole('button', { name: 'Potvrdi kraj seta' }));
+  await screen.findByText('Nema narednog servisa — set ili utakmica nisu u toku.');
+  expect(screen.getAllByRole('listitem')).toHaveLength(12);
+});
+test('legacy sets without a court show an explicit unavailable message', async () => {
+  renderBoard(); await loaded();
+  expect(screen.getByText('Raspored nije dostupan')).toBeTruthy();
+  expect(screen.queryByText(/^Na servisu:/)).toBeNull();
 });

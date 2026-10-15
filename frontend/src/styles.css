@@ -208,6 +208,12 @@ body {
 .roster-player[data-selected] { border-color: #8ebcaf; background: #e4f3ed; }
 .roster-player-copy { min-width: 0; overflow-wrap: anywhere; }
 .roster-libero { flex-shrink: 0; }
+.rotation-team { min-width: 0; background: #edf5f8; border-color: #bdd4df; }
+.rotation-service { background: #e4f3ed; border-color: #8ebcaf; color: #193d50; }
+.rotation-net { padding: .35rem; border-block: 2px dashed #7091a6; letter-spacing: .15em; }
+.rotation-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: .5rem; list-style: none; padding: 0; margin: 0; }
+.rotation-player { min-width: 0; padding: .65rem; border: 1px solid #c9dae6; border-radius: .65rem; background: #f9fcff; overflow-wrap: anywhere; }
+.rotation-player[data-serving] { border: 2px solid #137d73; padding: calc(.65rem - 1px); background: #dff1e9; }
 .roster-libero .mantine-Checkbox-label { font-size: .75rem; }
 .inline-delete-confirmation .mantine-Group-root { flex-wrap: wrap; }
 .auth-card .mantine-Tabs-list {

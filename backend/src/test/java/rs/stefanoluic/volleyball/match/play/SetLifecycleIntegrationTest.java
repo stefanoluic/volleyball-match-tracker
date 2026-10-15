@@ -168,6 +168,11 @@ class SetLifecycleIntegrationTest {
         assertThat(second.currentSet().homeScore()).isZero(); assertThat(second.currentSet().firstServingTeamId()).isEqualTo(away.getId());
         assertThat(second.currentSet().homeLineup().getFirst().participant().id()).isEqualTo(homeIds.get(1));
         assertThat(second.firstSet().homeLineup().getFirst().participant().id()).isEqualTo(homeIds.getFirst());
+        var freshCourt = scoring.get(match.getId(), second.currentSet().id()).court();
+        assertThat(freshCourt.servingTeamId()).isEqualTo(away.getId());
+        assertThat(freshCourt.server().id()).isEqualTo(awayIds.getFirst());
+        assertThat(freshCourt.homeLineup().getFirst().participant().id()).isEqualTo(homeIds.get(1));
+        assertThat(freshCourt.awayLineup().getFirst().rotationPosition()).isEqualTo(1);
         assertThat(lineups.count()).isEqualTo(24); conflict(() -> play.startNext(match.getId(),base));
     }
     @Test void fullThreeZeroMatchUsesRecordedPointsAndFinishesOnThirdSet() {
@@ -197,6 +202,8 @@ class SetLifecycleIntegrationTest {
                 base.homeLineup(),base.awayLineup(),away.getId()));
         UUID fifth=state.currentSet().id();
         assertThat(state.currentSet().firstServingTeamId()).isEqualTo(away.getId());
+        assertThat(scoring.get(match.getId(), fifth).court().servingTeamId()).isEqualTo(away.getId());
+        assertThat(scoring.get(match.getId(), fifth).court().server().id()).isEqualTo(awayIds.getFirst());
         score(fifth,15,14,0); conflict(() -> play.finish(match.getId(),fifth,finishRequest(0)));
         score(fifth,16,14,1); state=play.finish(match.getId(),fifth,finishRequest(1));
         assertThat(state.roster().match().status()).isEqualTo(MatchStatus.FINISHED);

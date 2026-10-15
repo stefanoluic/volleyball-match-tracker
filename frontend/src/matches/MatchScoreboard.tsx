@@ -3,6 +3,7 @@ import { notifications } from '@mantine/notifications';
 import { IconPlus, IconRefresh, IconArrowBackUp } from '@tabler/icons-react';
 import { useEffect, useRef, useState } from 'react';
 import { api, ApiError, errorMessage, type Match, type MatchPreparation, type MatchSet, type SetPoint, type SetScore } from '../api/client';
+import { SetCourtView } from './SetCourtView';
 
 type Command = { kind: 'add'; requestId: string; version: number; scoringTeamId: string }
   | { kind: 'undo'; requestId: string; version: number; pointId: string }
@@ -53,7 +54,8 @@ export function MatchScoreboard({ match, set, canManage, onBusyChange, onSetFini
         const finished = result.sets.find((entry) => entry.id === set.id);
         if (finished) setScore((current) => current && ({ ...current, version: finished.scoreVersion,
           homeScore: finished.homeScore, awayScore: finished.awayScore, setStatus: finished.status,
-          matchStatus: result.roster.match.status, canRecord: false, canUndo: false, canFinish: false, winnerTeamId: finished.winnerTeamId }));
+          matchStatus: result.roster.match.status, canRecord: false, canUndo: false, canFinish: false, winnerTeamId: finished.winnerTeamId,
+          court: current.court && { ...current.court, servingTeamId: null, server: null } }));
         setPending(null); setConfirmFinish(false); onSetFinished?.(result);
         notifications.show({ title: 'Set je završen', message: 'Konačan rezultat je sačuvan.', color: 'teal', role: 'status' });
         return;
@@ -145,9 +147,10 @@ export function MatchScoreboard({ match, set, canManage, onBusyChange, onSetFini
         </Alert>}
         {score && !editable && <Text size="sm" c="dimmed">{canManage
           ? 'Unos nije dostupan jer utakmica ili set nisu u toku.' : 'Pristup za pregled. Rezultat osvežavate ručno.'}</Text>}
-        <Text size="xs" c="dimmed">Za sada beležimo samo tim kome ide poen. Kraj seta potvrđuje statističar; rotacija još nije implementirana.</Text>
+        <Text size="xs" c="dimmed">Za sada beležimo samo tim kome ide poen. Servis i rotacija prate važeće poene; kraj seta potvrđuje statističar.</Text>
       </Stack>
     </Paper>
+    {score && !loading && !loadError && !writeError && <SetCourtView match={match} score={score} />}
     <Paper component="section" aria-label="Poslednji poeni" withBorder p="lg" className="roster-team">
       <Stack gap="md">
         <Group justify="space-between"><Title order={2} size="h4">Poslednji poeni</Title>

@@ -16,8 +16,9 @@ public class SetScoreService {
     private final MatchRepository matches;
     private final MatchSetRepository sets;
     private final SetPointRepository points;
-    public SetScoreService(MatchRepository matches, MatchSetRepository sets, SetPointRepository points) {
-        this.matches = matches; this.sets = sets; this.points = points;
+    private final SetCourtService court;
+    public SetScoreService(MatchRepository matches, MatchSetRepository sets, SetPointRepository points, SetCourtService court) {
+        this.matches = matches; this.sets = sets; this.points = points; this.court = court;
     }
     @Transactional(readOnly = true, isolation = Isolation.REPEATABLE_READ)
     public SetScoreResponse get(UUID matchId, UUID setId) {
@@ -79,7 +80,8 @@ public class SetScoreService {
         boolean live = set.getStatus() == MatchSetStatus.LIVE && set.getMatch().getStatus() == MatchStatus.LIVE;
         return new SetScoreResponse(set.getId(), set.getScoreVersion(), set.getHomeScore(), set.getAwayScore(),
                 set.getMatch().getStatus(), set.getStatus(), live && !set.hasWinningScore(), latest, recent,
-                live && latest != null, live && set.hasWinningScore(), set.getWinningTeamId());
+                live && latest != null, live && set.hasWinningScore(), set.getWinningTeamId(),
+                court.get(set, live && !set.hasWinningScore()));
     }
     private Match lock(UUID id) { return matches.findByIdForUpdate(id).orElseThrow(SetScoreService::matchNotFound); }
     private MatchSet findSet(UUID matchId, UUID setId) {

@@ -176,6 +176,13 @@ export interface SetPoint {
   cancelledAt: string | null;
 }
 
+export interface SetCourt {
+  servingTeamId: string | null;
+  server: MatchPlayer | null;
+  homeLineup: LineupPlayer[];
+  awayLineup: LineupPlayer[];
+}
+
 export interface SetScore {
   setId: string;
   version: number;
@@ -189,6 +196,7 @@ export interface SetScore {
   canUndo: boolean;
   canFinish: boolean;
   winnerTeamId: string | null;
+  court: SetCourt | null;
 }
 
 export interface AddPointInput {
