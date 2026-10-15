@@ -138,11 +138,19 @@ export interface MatchSet {
   startedAt: string;
   homeLineup: LineupPlayer[];
   awayLineup: LineupPlayer[];
+  scoreVersion: number;
+  finishedAt: string | null;
+  winnerTeamId: string | null;
 }
 
 export interface MatchPreparation {
   roster: MatchRoster;
   firstSet: MatchSet | null;
+  sets: MatchSet[];
+  currentSet: MatchSet | null;
+  nextSetNumber: number | null;
+  homeSetsWon: number;
+  awaySetsWon: number;
 }
 
 export interface StartMatchInput {
@@ -150,6 +158,12 @@ export interface StartMatchInput {
   homeLineup: string[];
   awayLineup: string[];
   firstServingTeamId: string;
+}
+
+export interface StartNextSetInput extends StartMatchInput {
+  number: number;
+  previousSetId: string;
+  previousSetVersion: number;
 }
 
 export interface SetPoint {
@@ -172,6 +186,9 @@ export interface SetScore {
   canRecord: boolean;
   lastActivePoint: SetPoint | null;
   points: SetPoint[];
+  canUndo: boolean;
+  canFinish: boolean;
+  winnerTeamId: string | null;
 }
 
 export interface AddPointInput {
@@ -268,6 +285,10 @@ export const api = {
     get<MatchPreparation>('/api/matches/' + matchId + '/preparation', signal),
   startMatch: (matchId: string, data: StartMatchInput) =>
     post<MatchPreparation>('/api/matches/' + matchId + '/start', data),
+  startNextSet: (matchId: string, data: StartNextSetInput) =>
+    post<MatchPreparation>('/api/matches/' + matchId + '/sets', data),
+  finishSet: (matchId: string, setId: string, data: UndoPointInput) =>
+    post<MatchPreparation>('/api/matches/' + matchId + '/sets/' + setId + '/finish', data),
   setScore: (matchId: string, setId: string, signal?: AbortSignal) =>
     get<SetScore>('/api/matches/' + matchId + '/sets/' + setId + '/score', signal),
   addPoint: (matchId: string, setId: string, data: AddPointInput) =>

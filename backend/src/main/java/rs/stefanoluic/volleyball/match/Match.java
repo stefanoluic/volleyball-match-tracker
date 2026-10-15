@@ -54,6 +54,10 @@ public class Match {
         if (status != MatchStatus.SCHEDULED) throw new IllegalStateException("Match has already started.");
         status = MatchStatus.LIVE;
     }
+    public void finish() {
+        if (status != MatchStatus.LIVE) throw new IllegalStateException("Match is not live.");
+        status = MatchStatus.FINISHED;
+    }
     public int getRosterVersion() { return rosterVersion; }
     public void advanceRosterVersion() { rosterVersion++; }
     public Team getHomeTeam() { return homeTeam; }

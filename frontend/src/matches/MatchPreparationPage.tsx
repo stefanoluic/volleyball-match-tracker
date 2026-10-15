@@ -61,25 +61,32 @@ export function MatchPreparationPage({ matchId, canManage, onBack }: {
   const [fields, setFields] = useState<Record<string, string>>({});
   const [busy, setBusy] = useState(false);
   const [scoringBusy, setScoringBusy] = useState(false);
+  const [preparingNext, setPreparingNext] = useState(false);
+  const [selectedSetId, setSelectedSetId] = useState<string | null>(null);
   const [confirming, setConfirming] = useState(false);
-  const [navigation, setNavigation] = useState<'back' | 'reload' | null>(null);
+  const [navigation, setNavigation] = useState<'back' | 'reload' | 'overview' | null>(null);
   useEffect(() => {
     const controller = new AbortController();
     setLoading(true); setLoadError(''); setStartError(''); setFields({}); setConfirming(false);
     api.matchPreparation(matchId, controller.signal).then((result) => {
-      if (!controller.signal.aborted) { setData(result); setInput(initialStartInput(result)); }
+      if (!controller.signal.aborted) {
+        setData(result); setInput(initialStartInput(result)); setPreparingNext(false);
+        setSelectedSetId(result.currentSet?.id ?? result.sets.at(-1)?.id ?? null);
+      }
     }).catch((failure) => { if (!controller.signal.aborted) setLoadError(errorMessage(failure)); })
       .finally(() => { if (!controller.signal.aborted) setLoading(false); });
     return () => controller.abort();
   }, [matchId, attempt]);
 
-  const editable = !!data && canManage && data.roster.match.status === 'SCHEDULED' && !data.firstSet;
-  const dirty = editable && !!input && hasStartDraft(input);
-  function navigate(destination: 'back' | 'reload') {
+  const editable = !!data && canManage && ((data.roster.match.status === 'SCHEDULED' && !data.firstSet)
+    || (preparingNext && data.roster.match.status === 'LIVE' && !!data.nextSetNumber));
+  const dirty = editable && !!input && !!data && hasStartDraft(input, initialStartInput(data).firstServingTeamId);
+  function navigate(destination: 'back' | 'reload' | 'overview') {
     if (busy || scoringBusy) return;
     setConfirming(false);
     if (dirty) setNavigation(destination);
     else if (destination === 'back') onBack();
+    else if (destination === 'overview') setPreparingNext(false);
     else setAttempt((value) => value + 1);
   }
   function prepare(event: FormEvent<HTMLFormElement>) {
@@ -95,9 +102,14 @@ export function MatchPreparationPage({ matchId, canManage, onBack }: {
     if (Object.keys(errors).length) { setFields(errors); setConfirming(false); return; }
     setBusy(true); setStartError('');
     try {
-      const result = await api.startMatch(matchId, input);
+      const previous = data.sets.at(-1);
+      const result = preparingNext && data.nextSetNumber && previous
+        ? await api.startNextSet(matchId, { ...input, number: data.nextSetNumber,
+          previousSetId: previous.id, previousSetVersion: previous.scoreVersion })
+        : await api.startMatch(matchId, input);
       setData(result); setInput(initialStartInput(result)); setConfirming(false);
-      notifications.show({ title: 'Utakmica je počela', message: 'Prvi set je pokrenut. Početne postave su sačuvane.',
+      setPreparingNext(false); setSelectedSetId(result.currentSet?.id ?? null);
+      notifications.show({ title: preparingNext ? 'Set je počeo' : 'Utakmica je počela', message: 'Početne postave su sačuvane.',
         color: 'teal', role: 'status' });
     } catch (failure) { setStartError(errorMessage(failure)); setConfirming(false); }
     finally { setBusy(false); }
@@ -113,18 +125,20 @@ export function MatchPreparationPage({ matchId, canManage, onBack }: {
 
   const { roster, firstSet } = data;
   const match = roster.match;
-  const title = firstSet ? 'Pregled utakmice' : 'Početne postave';
+  const selectedSet = data.sets.find((entry) => entry.id === selectedSetId) ?? data.currentSet ?? data.sets.at(-1);
+  const nextNumber = preparingNext ? data.nextSetNumber : null;
+  const title = nextNumber ? 'Početne postave · set ' + nextNumber : firstSet ? 'Pregled utakmice' : 'Početne postave';
   const blocked = busy || confirming || !!navigation;
   const ready = roster.home.selected.filter((p) => !p.isLibero).length >= 6
     && roster.away.selected.filter((p) => !p.isLibero).length >= 6;
   const change = (next: StartMatchInput) => { setInput(next); setFields({}); setStartError(''); };
-  return <EditorPage title={title} category={match.homeTeam.name + ' — ' + match.awayTeam.name}
+  return <EditorPage key={title} title={title} category={match.homeTeam.name + ' — ' + match.awayTeam.name}
     description={formatMatchTime(match.scheduledAt) + ' · ' + matchStatusLabels[match.status]}
     icon={<IconBallVolleyball size={28} aria-hidden="true" />} busy={busy || scoringBusy}
     breadcrumbs={[{ label: 'Utakmice', onClick: () => navigate('back') }]}>
     <Stack gap="xl">
       <Group justify="space-between">
-        <Text size="sm" c="dimmed">Prvi set · početna šestorka i redosled rotacije</Text>
+        <Text size="sm" c="dimmed">{nextNumber ? 'Priprema seta ' + nextNumber : firstSet ? 'Rezultat u setovima i pregled igre' : 'Prvi set · početna šestorka i redosled rotacije'}</Text>
         <Button variant="light" size="xs" disabled={busy || scoringBusy} leftSection={<IconRefresh size={15} />}
           onClick={() => navigate('reload')}>Učitaj trenutno stanje</Button>
       </Group>
@@ -134,19 +148,48 @@ export function MatchPreparationPage({ matchId, canManage, onBack }: {
         <Group mt="sm"><Button size="xs" variant="default" onClick={() => setNavigation(null)}>Nastavi uređivanje</Button>
           <Button size="xs" color="yellow" onClick={() => {
             const destination = navigation; setNavigation(null);
-            if (destination === 'back') onBack(); else setAttempt((value) => value + 1);
+            if (destination === 'back') onBack();
+            else if (destination === 'overview') setPreparingNext(false);
+            else setAttempt((value) => value + 1);
           }}>Odbaci izmene</Button></Group>
       </Alert>}
-      {firstSet ? <>
-        <MatchScoreboard match={match} set={firstSet} canManage={canManage} onBusyChange={setScoringBusy} />
+      {firstSet && !preparingNext ? <>
+        <Paper component="section" withBorder p="lg" className="roster-team" aria-label="Rezultat utakmice">
+          <Stack gap="md">
+            <Group justify="space-between"><Title order={2} size="h3">Rezultat u setovima</Title>
+              <Badge color={match.status === 'FINISHED' ? 'gray' : 'teal'}>{matchStatusLabels[match.status]}</Badge></Group>
+            <Text size="xl" fw={700} ta="center">{match.homeTeam.name} {data.homeSetsWon} : {data.awaySetsWon} {match.awayTeam.name} · setovi</Text>
+            {match.status === 'FINISHED' && <Alert color="teal" role="status">
+              Utakmica je završena. Pobednik: {data.homeSetsWon === 3 ? match.homeTeam.name : match.awayTeam.name}.
+            </Alert>}
+            <Group gap="xs">{data.sets.map((entry) => <Badge key={entry.id} variant="light" color={entry.status === 'LIVE' ? 'teal' : 'blue'}>
+              Set {entry.number}: {entry.status === 'FINISHED' ? entry.homeScore + ':' + entry.awayScore : 'U toku'}
+            </Badge>)}</Group>
+            {canManage && data.nextSetNumber && <Button color="teal" w="fit-content" disabled={busy || scoringBusy}
+              onClick={() => { setInput(initialStartInput(data)); setPreparingNext(true); setFields({}); setStartError(''); setConfirming(false); }}>
+              Pripremi set {data.nextSetNumber}
+            </Button>}
+            {!canManage && data.nextSetNumber && <Text size="sm" c="dimmed">Čeka se da statističar pokrene set {data.nextSetNumber}.</Text>}
+          </Stack>
+        </Paper>
+        <Select label="Set za pregled" disabled={scoringBusy} value={selectedSet?.id ?? null}
+          data={data.sets.map((entry) => ({ value: entry.id, label: 'Set ' + entry.number + ' · '
+            + (entry.status === 'LIVE' ? 'U toku' : entry.homeScore + ':' + entry.awayScore + ' · Završen') }))}
+          onChange={(id) => setSelectedSetId(id)} />
+        {selectedSet && <>
+        <MatchScoreboard key={selectedSet.id + ':' + selectedSet.status} match={match} set={selectedSet}
+          canManage={canManage} onBusyChange={setScoringBusy} onSetFinished={(result) => {
+            setData(result); setInput(initialStartInput(result)); setSelectedSetId(result.currentSet?.id ?? result.sets.at(-1)?.id ?? null);
+          }} />
         <SimpleGrid cols={{ base: 1, md: 2 }}>
-          <SavedLineup team={roster.home} rows={firstSet.homeLineup} />
-          <SavedLineup team={roster.away} rows={firstSet.awayLineup} />
+          <SavedLineup team={roster.home} rows={selectedSet.homeLineup} />
+          <SavedLineup team={roster.away} rows={selectedSet.awayLineup} />
         </SimpleGrid>
+        </>}
         <Alert color="blue">Prikazane su početne postave. Izmene igrača, ulasci libera i automatska rotacija još nisu implementirani.</Alert>
-      </> : editable ? <form aria-label="Priprema prvog seta" onSubmit={prepare} noValidate>
+      </> : editable ? <form aria-label={nextNumber ? 'Priprema seta ' + nextNumber : 'Priprema prvog seta'} onSubmit={prepare} noValidate>
         <Stack gap="xl">
-          <Alert color="blue">Najpre sačuvajte učesnike preko „Prikaži sastave“. Ovde ih raspoređujete za prvi set.
+          <Alert color="blue">{nextNumber ? 'Izaberite početnu šestorku za naredni set iz prijavljenih učesnika.' : 'Najpre sačuvajte učesnike preko „Prikaži sastave“. Ovde ih raspoređujete za prvi set.'}
             Libero ulazi naknadno; ne bira se u početnu šestorku.</Alert>
           <SimpleGrid cols={{ base: 1, md: 2 }}>
             <TeamLineup team={roster.home} ids={input.homeLineup} disabled={blocked} error={fields.homeLineup}
@@ -156,15 +199,21 @@ export function MatchPreparationPage({ matchId, canManage, onBack }: {
           </SimpleGrid>
           <Select label="Tim koji prvi servira" required clearable value={input.firstServingTeamId || null}
             data={[{ value: match.homeTeam.id, label: match.homeTeam.name }, { value: match.awayTeam.id, label: match.awayTeam.name }]}
-            disabled={blocked} error={fields.firstServingTeamId} placeholder="Izaberite tim prema ishodu žreba"
+            disabled={blocked || (!!nextNumber && nextNumber < 5)} error={fields.firstServingTeamId} placeholder="Izaberite tim prema ishodu žreba"
             onChange={(id) => change({ ...input, firstServingTeamId: id ?? '' })} />
-          {confirming ? <Alert color="yellow" title="Pokretanje utakmice" role="alert">
-            Sačuvaće se obe šestorke i prvi servis. Utakmica će preći u „U toku“, a sastavi više neće moći da se uređuju.
+          {nextNumber && <Text size="xs" c="dimmed">{nextNumber === 5
+            ? 'Za peti set ponavlja se žreb; unesite tim koji prvi servira.'
+            : 'Prvi servis se automatski menja u odnosu na prethodni set.'}</Text>}
+          {confirming ? <Alert color="yellow" title={nextNumber ? 'Pokretanje seta ' + nextNumber : 'Pokretanje utakmice'} role="alert">
+            {nextNumber ? 'Sačuvaće se obe šestorke i pokrenuti novi set sa rezultatom 0:0.' : 'Sačuvaće se obe šestorke i prvi servis. Utakmica će preći u „U toku“, a sastavi više neće moći da se uređuju.'}
             U ovoj verziji ne postoji vraćanje utakmice u „Zakazana“.
             <Group mt="sm"><Button variant="default" disabled={busy} onClick={() => setConfirming(false)}>Nastavi pripremu</Button>
-              <Button color="teal" loading={busy} onClick={start}>Potvrdi početak</Button></Group>
+              <Button color="teal" loading={busy} onClick={start}>{nextNumber ? 'Potvrdi početak seta' : 'Potvrdi početak'}</Button></Group>
           </Alert> : <Group justify="flex-end">
-            <Button type="submit" color="teal" disabled={!ready || !!navigation} leftSection={<IconPlayerPlay size={17} />}>Počni utakmicu</Button>
+            {nextNumber && <Button variant="default" onClick={() => navigate('overview')}>Odustani od pripreme</Button>}
+            <Button type="submit" color="teal" disabled={!ready || !!navigation} leftSection={<IconPlayerPlay size={17} />}>
+              {nextNumber ? 'Počni set ' + nextNumber : 'Počni utakmicu'}
+            </Button>
           </Group>}
           <Text size="xs" c="dimmed">Izbor se čuva tek pri potvrdi početka utakmice.</Text>
         </Stack>

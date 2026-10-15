@@ -2,7 +2,7 @@ import { MantineProvider } from '@mantine/core';
 import { notifications } from '@mantine/notifications';
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, expect, test, vi } from 'vitest';
-import { api, ApiError, type Match, type MatchSet, type SetPoint, type SetScore, type Team } from '../../src/api/client';
+import { api, ApiError, type Match, type MatchPreparation, type MatchSet, type SetPoint, type SetScore, type Team } from '../../src/api/client';
 import { MatchScoreboard } from '../../src/matches/MatchScoreboard';
 import { theme } from '../../src/theme';
 
@@ -11,12 +11,14 @@ const away: Team = { ...home, id: 'away', name: 'Partizan' };
 const match: Match = { id: 'match', homeTeam: home, awayTeam: away, status: 'LIVE',
   scheduledAt: home.createdAt, createdAt: home.createdAt };
 const set: MatchSet = { id: 'set', number: 1, status: 'LIVE', homeScore: 0, awayScore: 0,
-  firstServingTeamId: home.id, startedAt: home.createdAt, homeLineup: [], awayLineup: [] };
+  firstServingTeamId: home.id, startedAt: home.createdAt, homeLineup: [], awayLineup: [],
+  scoreVersion: 0, finishedAt: null, winnerTeamId: null };
 const zero: SetScore = { setId: set.id, version: 0, homeScore: 0, awayScore: 0,
-  matchStatus: 'LIVE', setStatus: 'LIVE', canRecord: true, lastActivePoint: null, points: [] };
+  matchStatus: 'LIVE', setStatus: 'LIVE', canRecord: true, lastActivePoint: null, points: [],
+  canUndo: false, canFinish: false, winnerTeamId: null };
 const point: SetPoint = { id: 'point', sequenceNumber: 1, scoringTeamId: home.id,
   homeScoreAfter: 1, awayScoreAfter: 0, createdAt: home.createdAt, cancelledAt: null };
-const one: SetScore = { ...zero, version: 1, homeScore: 1, lastActivePoint: point, points: [point] };
+const one: SetScore = { ...zero, version: 1, homeScore: 1, lastActivePoint: point, points: [point], canUndo: true };
 const undone: SetScore = { ...zero, version: 2, points: [{ ...point, cancelledAt: '2026-10-14T12:01:00Z' }] };
 
 beforeEach(() => {
@@ -140,9 +142,42 @@ test('load failure is recoverable and never enables score writes', async () => {
   await waitFor(() => expect(write).toHaveBeenCalledTimes(1));
 });
 test('finished match or set exposes read-only scoreboard even to statistician', async () => {
-  vi.mocked(api.setScore).mockResolvedValue({ ...one, setStatus: 'FINISHED', canRecord: false });
+  vi.mocked(api.setScore).mockResolvedValue({ ...one, setStatus: 'FINISHED', canRecord: false, canUndo: false });
   renderBoard(); await screen.findByText('Vojvodina 1 : 0 Partizan');
   expect(screen.getByText('Završen')).toBeTruthy();
   expect(screen.queryByRole('button', { name: 'Poen za domaćina' })).toBeNull();
   expect(screen.getByText('Unos nije dostupan jer utakmica ili set nisu u toku.')).toBeTruthy();
+});
+
+const winning: SetScore = { ...one, version: 48, homeScore: 25, awayScore: 23,
+  canRecord: false, canUndo: true, canFinish: true, winnerTeamId: home.id };
+const closedSet: MatchSet = { ...set, status: 'FINISHED', homeScore: 25, awayScore: 23,
+  scoreVersion: 49, finishedAt: home.createdAt, winnerTeamId: home.id };
+const completed: MatchPreparation = { roster: { match, version: 0,
+  home: { team: home, selected: [], available: [] }, away: { team: away, selected: [], available: [] } },
+  firstSet: closedSet, sets: [closedSet], currentSet: null, nextSetNumber: 2, homeSetsWon: 1, awaySetsWon: 0 };
+test('winning score disables additions but still allows undo until finish is confirmed', async () => {
+  vi.mocked(api.setScore).mockResolvedValue(winning);
+  const finish = vi.spyOn(api, 'finishSet').mockResolvedValue(completed);
+  renderBoard(); await screen.findByText('Vojvodina 25 : 23 Partizan');
+  expect((screen.getByRole('button', { name: 'Poen za domaćina' }) as HTMLButtonElement).disabled).toBe(true);
+  expect((screen.getByRole('button', { name: 'Poništi poslednji poen' }) as HTMLButtonElement).disabled).toBe(false);
+  fireEvent.click(screen.getByRole('button', { name: 'Završi set' }));
+  expect(finish).not.toHaveBeenCalled();
+  fireEvent.click(screen.getByRole('button', { name: 'Odustani od završavanja' }));
+  fireEvent.click(screen.getByRole('button', { name: 'Završi set' }));
+  fireEvent.click(screen.getByRole('button', { name: 'Potvrdi kraj seta' }));
+  await screen.findByText('Završen');
+  expect(finish).toHaveBeenCalledExactlyOnceWith(match.id, set.id, { version: 48, requestId: expect.any(String) });
+  expect(screen.queryByRole('button', { name: 'Poništi poslednji poen' })).toBeNull();
+});
+test('uncertain set completion retries the same identifier and never closes a different set', async () => {
+  vi.mocked(api.setScore).mockResolvedValue(winning);
+  const finish = vi.spyOn(api, 'finishSet').mockRejectedValueOnce(new Error('lost finish response')).mockResolvedValue(completed);
+  renderBoard(); await screen.findByText('Vojvodina 25 : 23 Partizan');
+  fireEvent.click(screen.getByRole('button', { name: 'Završi set' }));
+  fireEvent.click(screen.getByRole('button', { name: 'Potvrdi kraj seta' }));
+  fireEvent.click(await screen.findByRole('button', { name: 'Ponovi isti zahtev' }));
+  await screen.findByText('Završen');
+  expect(finish.mock.calls[1]).toEqual(finish.mock.calls[0]);
 });

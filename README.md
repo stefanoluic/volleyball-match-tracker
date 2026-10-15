@@ -5,7 +5,8 @@ A web application for recording volleyball match events and displaying statistic
 The application supports registration, session-based login/logout, administrator
 approval, blocking and permanent deletion of blocked user accounts, and team
 management, team rosters, match scheduling, match participant selection and
-starting the first set with saved initial lineups, point recording and undo.
+starting sets with saved initial lineups, point recording and undo, set completion
+and match completion.
 Detailed event classification, automatic live updates, statistics and reporting
 are not implemented yet.
 
@@ -116,7 +117,8 @@ and team/player CRUD, validation, foreign-key and jersey constraints, concurrent
 roster writes, match scheduling, time-zone conversion, match/team deletion guards,
 match participant snapshots, stale-save protection, first-set lineups, atomic match
 start, duplicate-start protection, point history, last-point undo, idempotent retries,
-concurrent score writes and role-based access. Integration tests
+concurrent score writes, deuce/tie-break rules, complete 3:0/3:2 match flows,
+set transitions and role-based access. Integration tests
 require Docker and use a separate temporary PostgreSQL container through
 Testcontainers. They do not modify the development database or its admin account.
 The first run may download the Testcontainers cleanup image.
@@ -174,6 +176,11 @@ last_point_sequence to match_sets. Point rows store the winning team, sequence,
 score after the original entry, creation time and optional cancellation time.
 Command identifiers are unique per set; cancellation metadata remains with the
 original point instead of deleting its history.
+
+The tenth migration adds finished_at, finish_request_id and finish_expected_version
+to match_sets. A partial unique index allows only one LIVE set per match.
+Finish metadata is saved together; old FINISHED rows without that metadata remain
+compatible with the schema. New completions always store it.
 
 ## Accounts and sessions
 
@@ -294,8 +301,9 @@ from application user accounts and have no login credentials.
   foreign keys, scheduled_at, status and created_at. Foreign keys restrict team
   deletion, and a database check prevents a team from playing itself.
 - New matches always have SCHEDULED status. A statistician can start one through
-  first-set preparation, changing it to LIVE. FINISHED is reserved for later match
-  completion. The backend rejects editing/deleting LIVE and FINISHED fixtures.
+  first-set preparation, changing it to LIVE. Confirming a team's third set win
+  changes the match to FINISHED. The backend rejects editing/deleting LIVE and
+  FINISHED fixtures.
 - The frontend's Utakmice tab shows a paginated list, newest scheduled time first.
   Forms use dedicated screens and deletion uses inline confirmation.
 - Team selectors are searchable and load all team pages. At least two teams must
@@ -307,8 +315,8 @@ from application user accounts and have no login credentials.
   occurrence. Past dates are allowed for recording historical fixtures.
 - No duplicate-fixture or overlapping-schedule rule is imposed in this version.
   First-set initial lineups and a 0:0 score are recorded at start. Points can then
-  be added and undone. Further sets, detailed action types and statistics are
-  not implemented yet.
+  be added and undone. Subsequent sets have their own initial lineups and score.
+  Detailed action types and statistics are not implemented yet.
 - Changing either team requires clearing and saving both participant rosters first.
   The date/time may still be edited with saved rosters.
 - Deleting a scheduled match also deletes its saved participant rows. The
@@ -378,7 +386,7 @@ the database, not accepted as editable client snapshots.
 - Preparation drafts are local to the open screen and saved only when starting.
   Navigation/reload asks before discarding a partial draft. Failed requests keep
   the selection; loading the current state is an explicit action.
-- Further sets, automatic rotation, ordinary substitutions and
+- Automatic rotation, ordinary substitutions and
   libero replacements are not implemented yet. Initial lineups do not represent
   a continuously updated court state.
 
@@ -419,8 +427,9 @@ firstServingTeamId. The lineup arrays contain six match participant IDs
   explicit score refresh before another entry.
 - Score/history reads use a repeatable-read snapshot. Osveži rezultat reloads
   the current state; automatic polling/WebSocket updates are not implemented yet.
-- Set completion and the next set are not implemented. Points do not automatically
-  finish a set or match, and no winning-score cutoff is enforced in this version.
+- Once the set has a winning score, further additions are blocked while undo remains
+  available. The statistician explicitly confirms completion; points alone do not
+  automatically close the set or match.
 
 | Method | Path | Access |
 | --- | --- | --- |
@@ -431,6 +440,50 @@ firstServingTeamId. The lineup arrays contain six match participant IDs
 Point input contains requestId, version and scoringTeamId. Undo input contains
 requestId and version; the point ID is in the URL. Completed-command replays are
 read-only responses and remain safe even if the match/set was subsequently closed.
+
+## Set completion and subsequent sets
+
+- Sets 1–4 require at least 25 points and a two-point lead. The fifth set requires
+  at least 15 with the same two-point lead. Deuce continues without a score cap.
+  The match ends when a team wins three sets.
+  These conditions follow [FIVB rules 6.2–6.3](https://www.fivb.com/wp-content/uploads/2025/01/FIVB-Volleyball_Rules2025_2028-EN-v05.pdf).
+- At a winning score, Završi set shows a confirmation and Potvrdi kraj seta closes
+  the current set. Before confirmation, an incorrectly recorded winning point can
+  still be undone. After confirmation, new point/undo writes are forbidden for
+  that set; reopening completed sets is not implemented.
+- Completion saves a timestamp and increments the score version. It uses the
+  shared match lock and requires the expected score version. Repeating the same
+  completion command returns current match state without counting another win,
+  including after the next set has started.
+- Pregled utakmice displays the confirmed set score, completed-set results and a
+  Set za pregled selector for each set's points and initial lineups. It defaults
+  to the active set, or the latest completed set when none is active.
+- Between sets, a statistician chooses Pripremi set N and enters six players per
+  team again. Each set has independent initial lineups using the same registered
+  match participants; the participant list remains locked after match start.
+- Sets 2–4 start with the team that did not serve first in the preceding set.
+  This is preselected in the form and checked by the backend. At 2:2, set 5
+  requires a fresh serving-team choice based on the new toss (FIVB 7.1 and 12.1).
+- Starting the next set checks its number, the latest completed set ID/version,
+  roster version, first-serving team and both lineups. Skipped sets, another
+  active set, outdated requests, a sixth set or a completed match are rejected.
+  Repeated/concurrent starts cannot create duplicate sets.
+- Confirmation of a third set win sets the match to FINISHED. All sets remain
+  available for read-only review by statisticians and coaching staff.
+- Only the normal best-of-five match flow is modeled. Forfeits, exceptional match
+  termination, score correction after confirmed completion and live court state
+  are outside this version.
+
+| Method | Path | Access |
+| --- | --- | --- |
+| POST | /api/matches/{matchId}/sets | Active statistician, CSRF required; between sets |
+| POST | /api/matches/{matchId}/sets/{setId}/finish | Active statistician, CSRF required; current LIVE set at winning score |
+
+Next-set input extends first-set input with number, previousSetId and
+previousSetVersion. Completion input contains requestId and version.
+Preparation responses retain firstSet for compatibility and also include all
+sets, currentSet, nextSetNumber, homeSetsWon and awaySetsWon. Set responses include
+scoreVersion, finishedAt and the winnerTeamId of a confirmed completed set.
 
 ## Initial administrator
 

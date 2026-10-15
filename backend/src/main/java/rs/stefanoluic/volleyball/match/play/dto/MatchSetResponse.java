@@ -7,4 +7,5 @@ import java.util.UUID;
 
 public record MatchSetResponse(UUID id, int number, MatchSetStatus status, int homeScore, int awayScore,
                                UUID firstServingTeamId, Instant startedAt,
-                               List<LineupPlayerResponse> homeLineup, List<LineupPlayerResponse> awayLineup) {}
+                               List<LineupPlayerResponse> homeLineup, List<LineupPlayerResponse> awayLineup,
+                               int scoreVersion, Instant finishedAt, UUID winnerTeamId) {}

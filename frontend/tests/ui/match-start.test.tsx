@@ -21,16 +21,20 @@ function players(team: Team): MatchPlayer[] {
 const homePlayers = players(home), awayPlayers = players(away);
 const preparation: MatchPreparation = { roster: { match, version: 2,
   home: { team: home, selected: homePlayers, available: [] },
-  away: { team: away, selected: awayPlayers, available: [] } }, firstSet: null };
+  away: { team: away, selected: awayPlayers, available: [] } }, firstSet: null,
+  sets: [], currentSet: null, nextSetNumber: null, homeSetsWon: 0, awaySetsWon: 0 };
 const firstSet: MatchSet = { id: 'set', number: 1, status: 'LIVE', homeScore: 0, awayScore: 0,
   firstServingTeamId: home.id, startedAt: '2026-10-14T12:00:00Z',
   homeLineup: homePlayers.slice(0, 6).map((participant, index) => ({ participant, rotationPosition: index + 1 })),
-  awayLineup: awayPlayers.slice(0, 6).map((participant, index) => ({ participant, rotationPosition: index + 1 })) };
-const started: MatchPreparation = { ...preparation, roster: { ...preparation.roster, match: { ...match, status: 'LIVE' } }, firstSet };
+  awayLineup: awayPlayers.slice(0, 6).map((participant, index) => ({ participant, rotationPosition: index + 1 })),
+  scoreVersion: 0, finishedAt: null, winnerTeamId: null };
+const started: MatchPreparation = { ...preparation, roster: { ...preparation.roster, match: { ...match, status: 'LIVE' } },
+  firstSet, sets: [firstSet], currentSet: firstSet };
 beforeEach(() => {
   vi.spyOn(api, 'matchPreparation').mockResolvedValue(preparation);
   vi.spyOn(api, 'setScore').mockResolvedValue({ setId: firstSet.id, version: 0, homeScore: 0, awayScore: 0,
-    matchStatus: 'LIVE', setStatus: 'LIVE', canRecord: true, lastActivePoint: null, points: [] });
+    matchStatus: 'LIVE', setStatus: 'LIVE', canRecord: true, lastActivePoint: null, points: [],
+    canUndo: false, canFinish: false, winnerTeamId: null });
   vi.spyOn(notifications, 'show').mockReturnValue('notice');
 });
 afterEach(() => vi.restoreAllMocks());
@@ -67,7 +71,7 @@ test('statistician confirms before starting, then sees saved sixes and 0:0', asy
     awayLineup: awayPlayers.slice(0, 6).map((p) => p.id), firstServingTeamId: home.id,
   }));
   await screen.findByText('Vojvodina 0 : 0 Partizan');
-  expect(screen.getByRole('region', { name: 'Rezultat prvog seta' })).toBeTruthy();
+  expect(screen.getByRole('region', { name: 'Rezultat seta 1' })).toBeTruthy();
   expect(screen.queryByRole('form')).toBeNull();
   expect(notifications.show).toHaveBeenCalledTimes(1);
 }, 20_000);
@@ -108,7 +112,8 @@ for (const canManage of [true, false]) {
     await screen.findByText('Vojvodina 0 : 0 Partizan');
     expect(screen.getAllByText('#1 Marko Marković')).toHaveLength(2);
     expect(screen.getByText('Prvi servis: Vojvodina')).toBeTruthy();
-    expect(screen.queryByRole('combobox')).toBeNull();
+    expect(screen.queryByRole('combobox', { name: /pozicija/ })).toBeNull();
+    expect(screen.getByRole('combobox', { name: 'Set za pregled' })).toBeTruthy();
     expect(screen.queryByRole('button', { name: 'Počni utakmicu' })).toBeNull();
   });
 }

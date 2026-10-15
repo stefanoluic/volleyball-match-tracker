@@ -37,6 +37,8 @@ public class SetScoreService {
         }
         requireLive(match, set);
         requireVersion(set, request.version());
+        if (set.hasWinningScore()) throw new ApiException(HttpStatus.CONFLICT,
+                "Postignut je rezultat za kraj seta. Potvrdite kraj ili poništite pogrešan završni poen.");
         boolean home = match.getHomeTeam().getId().equals(request.scoringTeamId());
         if (!home && !match.getAwayTeam().getId().equals(request.scoringTeamId())) {
             throw new ApiException(HttpStatus.BAD_REQUEST, "Poen mora pripadati jednom od timova ove utakmice.");
@@ -74,9 +76,10 @@ public class SetScoreService {
                 .map(PointResponse::from).orElse(null);
         var recent = points.findBySetIdOrderBySequenceNumberDesc(set.getId(), PageRequest.of(0, 20))
                 .stream().map(PointResponse::from).toList();
-        boolean canRecord = set.getStatus() == MatchSetStatus.LIVE && set.getMatch().getStatus() == MatchStatus.LIVE;
+        boolean live = set.getStatus() == MatchSetStatus.LIVE && set.getMatch().getStatus() == MatchStatus.LIVE;
         return new SetScoreResponse(set.getId(), set.getScoreVersion(), set.getHomeScore(), set.getAwayScore(),
-                set.getMatch().getStatus(), set.getStatus(), canRecord, latest, recent);
+                set.getMatch().getStatus(), set.getStatus(), live && !set.hasWinningScore(), latest, recent,
+                live && latest != null, live && set.hasWinningScore(), set.getWinningTeamId());
     }
     private Match lock(UUID id) { return matches.findByIdForUpdate(id).orElseThrow(SetScoreService::matchNotFound); }
     private MatchSet findSet(UUID matchId, UUID setId) {

@@ -31,6 +31,12 @@ public class MatchSet {
     private int scoreVersion;
     @Column(name = "last_point_sequence", nullable = false)
     private int lastPointSequence;
+    @Column(name = "finished_at")
+    private Instant finishedAt;
+    @Column(name = "finish_request_id")
+    private UUID finishRequestId;
+    @Column(name = "finish_expected_version")
+    private Integer finishExpectedVersion;
 
     protected MatchSet() {}
     public MatchSet(Match match, int number, Team firstServingTeam) {
@@ -44,6 +50,25 @@ public class MatchSet {
     public Match getMatch() { return match; }
     public int getScoreVersion() { return scoreVersion; }
     public int getLastPointSequence() { return lastPointSequence; }
+    public int getTargetScore() { return number == 5 ? 15 : 25; }
+    public boolean hasWinningScore() {
+        return Math.max(homeScore, awayScore) >= getTargetScore() && Math.abs((long) homeScore - awayScore) >= 2;
+    }
+    public UUID getWinningTeamId() {
+        if (!hasWinningScore()) return null;
+        return (homeScore > awayScore ? match.getHomeTeam() : match.getAwayTeam()).getId();
+    }
+    public Instant getFinishedAt() { return finishedAt; }
+    public UUID getFinishRequestId() { return finishRequestId; }
+    public Integer getFinishExpectedVersion() { return finishExpectedVersion; }
+    public void finish(UUID requestId, int expectedVersion) {
+        if (status != MatchSetStatus.LIVE || !hasWinningScore()) throw new IllegalStateException("Set cannot finish.");
+        status = MatchSetStatus.FINISHED;
+        finishedAt = Instant.now();
+        finishRequestId = requestId;
+        finishExpectedVersion = expectedVersion;
+        scoreVersion++;
+    }
     public void recordPoint(boolean home) {
         if (home) homeScore++; else awayScore++;
         lastPointSequence++;
