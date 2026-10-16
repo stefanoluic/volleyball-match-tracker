@@ -26,6 +26,7 @@ function TeamCourt({ team, rows, serverId, home }: {
             {player && <><Text fw={700} size="lg">#{player.jerseyNumber}</Text>
               <Text size="sm">{player.firstName} {player.lastName}</Text></>}
             {serving && <Badge size="xs" color="teal">Servira</Badge>}
+            {player?.isLibero && <Badge size="xs" color="violet" variant="light">Libero</Badge>}
           </li>;
         })}
       </ol>
@@ -47,7 +48,8 @@ export function SetCourtView({ match, score }: { match: Match; score: SetScore }
       <Paper withBorder p="md" className="rotation-service" role="status" aria-live="polite" aria-atomic="true">
         {server && court.servingTeamId ? <Text fw={600}>
           Na servisu: {servingTeam.name} · #{server.jerseyNumber} {server.firstName} {server.lastName}
-        </Text> : <Text fw={600}>{score.canFinish ? 'Čeka se potvrda kraja seta — nema narednog servisa.'
+        </Text> : <Text fw={600}>{score.libero?.mustExit ? 'Pre narednog servisa potreban je izlazak libera.'
+          : score.canFinish ? 'Čeka se potvrda kraja seta — nema narednog servisa.'
           : 'Nema narednog servisa — set ili utakmica nisu u toku.'}</Text>}
       </Paper>
       <SimpleGrid cols={{ base: 1, md: 2 }}>
@@ -55,7 +57,7 @@ export function SetCourtView({ match, score }: { match: Match; score: SetScore }
         <TeamCourt team={match.awayTeam} rows={court.awayLineup} serverId={server?.id ?? null} home={false} />
       </SimpleGrid>
       <Text size="sm" c="dimmed">Prikazan je redosled u rotaciji, ne fizički položaj igrača tokom akcije.
-        Rotira se samo tim koji preuzme servis. Izmene igrača i ulasci libera još nisu podržani.</Text>
+        Rotira se samo tim koji preuzme servis. Prikaz uključuje obične izmene i zamene libera.</Text>
     </Stack>
   </section>;
 }

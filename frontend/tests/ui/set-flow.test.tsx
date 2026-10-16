@@ -33,7 +33,7 @@ const playingSecond: MatchPreparation={...between,sets:[first,second],currentSet
 function score(entry: MatchSet): SetScore {
   return {setId:entry.id,version:entry.scoreVersion,homeScore:entry.homeScore,awayScore:entry.awayScore,
     matchStatus:'LIVE',setStatus:entry.status,canRecord:entry.status==='LIVE',canUndo:false,canFinish:false,
-    winnerTeamId:entry.winnerTeamId,lastActivePoint:null,points:[],court:null};
+    winnerTeamId:entry.winnerTeamId,lastActivePoint:null,points:[],court:null,substitutions:null,libero:null};
 }
 beforeEach(()=>{
   vi.spyOn(api,'matchPreparation').mockResolvedValue(between);

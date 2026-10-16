@@ -6,7 +6,8 @@ The application supports registration, session-based login/logout, administrator
 approval, blocking and permanent deletion of blocked user accounts, and team
 management, team rosters, match scheduling, match participant selection and
 starting sets with saved initial lineups, point recording and undo, automatic
-service/rotation tracking, set completion and match completion.
+service/rotation tracking, ordinary player substitutions, libero replacements,
+set completion and match completion.
 Detailed event classification, automatic live updates, statistics and reporting
 are not implemented yet.
 
@@ -117,7 +118,9 @@ and team/player CRUD, validation, foreign-key and jersey constraints, concurrent
 roster writes, match scheduling, time-zone conversion, match/team deletion guards,
 match participant snapshots, stale-save protection, first-set lineups, atomic match
 start, duplicate-start protection, point history, last-point undo, idempotent retries,
-concurrent score writes, server/rotation recovery after undo, deuce/tie-break rules, complete 3:0/3:2 match flows,
+concurrent score writes, substitutions/libero replacements and reverse-order corrections,
+server/rotation recovery after undo,
+deuce/tie-break rules, complete 3:0/3:2 match flows,
 set transitions and role-based access. Integration tests
 require Docker and use a separate temporary PostgreSQL container through
 Testcontainers. They do not modify the development database or its admin account.
@@ -181,6 +184,15 @@ The tenth migration adds finished_at, finish_request_id and finish_expected_vers
 to match_sets. A partial unique index allows only one LIVE set per match.
 Finish metadata is saved together; old FINISHED rows without that metadata remain
 compatible with the schema. New completions always store it.
+
+The eleventh migration creates volleyball.set_substitutions. Each row records one
+outgoing/incoming pair, its original lineup slot, team and match references,
+score at entry, preceding point sequence, command/version and cancellation metadata.
+Composite foreign keys keep both participants in the same match/team as the set.
+
+The twelfth migration creates volleyball.libero_replacements with the same command,
+version, score and cancellation metadata. It additionally records the covered regular
+participant so returns and switches to the second libero preserve the correct player.
 
 ## Accounts and sessions
 
@@ -387,8 +399,8 @@ the database, not accepted as editable client snapshots.
   Navigation/reload asks before discarding a partial draft. Failed requests keep
   the selection; loading the current state is an explicit action.
 - Initial lineups remain unchanged. The score view separately displays the
-  rotational order derived from recorded points. Ordinary substitutions and
-  libero replacements are not implemented yet.
+  rotational order derived from recorded points, ordinary substitutions and
+  libero replacements.
 
 | Method | Path | Access |
 | --- | --- | --- |
@@ -408,6 +420,8 @@ firstServingTeamId. The lineup arrays contain six match participant IDs
   non-cancelled point. The score decreases on that side; previous points may then
   be undone in reverse order. Cancelled entries remain visible and never count
   toward the current score. Scores cannot become negative.
+  If an ordinary substitution or libero replacement was entered after that point,
+  it must be cancelled first.
 - The view shows the latest 20 point entries, newest first, including cancelled
   rows. The server separately returns the last active point, even if it is older
   than the visible history. Sequence numbers are never reused after cancellation.
@@ -416,7 +430,7 @@ firstServingTeamId. The lineup arrays contain six match participant IDs
   the match in the URL, and the scoring team must belong to that match. Coaches
   can read the score/history but have no write access; admins have no access.
 - Mutations share the match lock and include the current score version. Successful
-  additions and cancellations each increment that version. Stale requests return
+  point, substitution and libero changes each increment that version. Stale requests return
   HTTP 409 without changing the score or history.
 - Each addition/undo also has a requestId. Repeating an already committed command
   returns the current state without applying it again, including after subsequent
@@ -471,7 +485,7 @@ read-only responses and remain safe even if the match/set was subsequently close
 - Confirmation of a third set win sets the match to FINISHED. All sets remain
   available for read-only review by statisticians and coaching staff.
 - Only the normal best-of-five match flow is modeled. Forfeits, exceptional match
-  termination, score correction after confirmed completion and player replacements
+  termination, score correction after confirmed completion and exceptional replacements
   are outside this version.
 
 | Method | Path | Access |
@@ -495,20 +509,110 @@ scoreVersion, finishedAt and the winnerTeamId of a confirmed completed set.
   the receiving team wins a rally, only that team rotates: 2→1→6→5→4→3→2.
   Its new position-1 player serves next (FIVB rules 7.6 and 12.2).
 - Both orders and the server are derived on the backend from the saved initial
-  lineups and ALL non-cancelled points in sequence, not only the 20 visible entries.
+  lineups, active ordinary/libero changes and ALL non-cancelled points in sequence,
+  not only the 20 visible entries.
   Undo, idempotent retries and page reloads therefore produce the same state.
   Starting another set uses that set's own lineups and first-serving team.
 - At a winning score or after completion, no next server is shown. A set-winning
   rally does not trigger a further service rotation. Undoing that rally before
   confirmation restores the server and positions from the remaining point history.
 - The display is rotational order, not physical player locations during a rally.
-  It still uses the starting six: substitutions, libero replacements, exceptional
-  service-order corrections and sanction-specific rotation rules are not modeled.
-- Reads share the score's transaction/snapshot. No new database migration is needed.
+  Ordinary replacements take over the outgoing player's original lineup slot and
+  follow its rotation. Libero replacements cover that occupant without changing
+  the ordinary substitution pair. Exceptional service-order corrections and
+  sanction-specific rotation rules are not modeled.
+- Reads share the score's transaction/snapshot. Rotation itself needs no extra stored state.
   Sets with missing lineups or scores inconsistent with their point history return
   court=null rather than inventing a server. The UI explains unavailable state and
   hides potentially stale court data after a failed write until retry/refresh.
   Coaches have the same read-only view, refreshed manually.
+
+## Ordinary substitutions
+
+- In Pregled utakmice, Unesi izmenu opens an inline form: choose a team, an
+  outgoing player and an eligible incoming player, then review and confirm.
+  Only server-provided legal options are shown. The backend independently checks
+  eligibility, session role, set status and current version.
+- A team may use at most six ordinary substitutions in a set. A starter may leave
+  once and return once, only for the same reserve; that reserve cannot be reused
+  for another starter. Returns count as substitutions too. Only registered,
+  non-libero participants may enter. An on-court player cannot enter again.
+- This version supports ONE pair per request and one request per team between
+  recorded rallies, including before the first point. Both teams may request a
+  substitution in the same interruption. Grouped substitutions, forced/exceptional
+  substitutions are not implemented. Libero replacements have a separate workflow. This is a subset
+  of the ordinary substitution procedure in FIVB rules 15.1–15.6, not a full referee system.
+- A substitution does not change the score, initial lineups or rotational order.
+  It changes the slot's occupant; replacing the server immediately changes the
+  displayed server. New sets reset substitution limits and use their own starting sixes.
+- The view shows each team's used count and the latest 20 substitution entries,
+  including cancelled ones. Counts and eligibility use all active entries.
+- Poništi poslednju izmenu corrects the latest active substitution only when no
+  later active point or substitution exists. It restores the previous occupant
+  and eligibility without consuming another substitution. Cancelled rows remain
+  in history. A real player return must instead be entered as a new substitution.
+- Point, substitution and libero corrections run in reverse event order across BOTH teams:
+  cancel later points/changes before earlier ones. The score response exposes
+  canUndo and substitutions.undoableId so the UI does not offer unsafe corrections.
+- Writes use the shared match lock, version check and idempotent command IDs.
+  Repeating the same successful command never duplicates or resurrects a change.
+  Network/5xx failures retain the exact command for Ponovi isti zahtev. Conflicts
+  require cancelling the draft and refreshing. While a draft is open, point input,
+  set completion and parent navigation are blocked until it is saved or cancelled.
+- Finished sets are read-only. At a winning score no new substitution is accepted;
+  prior changes remain reviewable. Coaches can read history and counts but cannot write.
+
+| Method | Path | Access |
+| --- | --- | --- |
+| POST | /api/matches/{matchId}/sets/{setId}/substitutions | Active statistician, CSRF; current LIVE set before winning score |
+| POST | /api/matches/{matchId}/sets/{setId}/substitutions/{substitutionId}/undo | Active statistician, CSRF; reverse-order correction in LIVE set |
+
+Substitution input contains requestId, version, outgoingParticipantId and
+incomingParticipantId (match_players IDs, not players IDs). Undo contains requestId
+and version. Both return the authoritative score, court and substitution state.
+
+## Libero replacements
+
+- Libero has a separate inline form and history in Pregled utakmice. Select the
+  outgoing player and one of the server-provided incoming players, review and confirm.
+  Changes update the six without altering points or the six-substitution allowance.
+- Only match-designated liberos may enter. One libero per team can be present at
+  a time. A libero may cover a back-row player who is not about to serve; returns
+  restore exactly that covered player. After a recorded rally, the other designated
+  libero may take over the same slot. These normal cases follow FIVB rule 19.3.
+- A completed recorded rally must separate replacements by the same team, including
+  exits and switches. Ordinary substitutions have an independent interruption limit.
+  Before the first rally, entry is possible after the initial sixes have been saved
+  at set start; the application does not model a referee's authorization or whistle.
+- When a point rotates a libero into the front row or a serving position, the view
+  marks a required exit. The point remains recorded, but another point and ordinary
+  substitutions are blocked until the covered player returns. No libero is announced
+  as a server. This is a pending action before the next rally, not permission for
+  a libero to play in the front row. No replacement is silently generated.
+- The ordinary substitution form excludes a player currently covered by a libero.
+  After the libero exits, a legal ordinary change may be entered. The court merges
+  both histories by version, so an older libero return cannot overwrite a newer change.
+- Poništi zamenu libera corrects only the latest active action, keeping a cancelled
+  history entry. It is not the real on-court exit. Undo points and all player changes
+  in reverse order; undoing a rotating point restores the previous back-row position.
+  Undoing a required exit can restore the pending-exit warning until corrected.
+- New sets have no active libero until an entry is recorded. Finished sets retain
+  their historical sixes and replacement history for read-only review. New replacements
+  are rejected after a winning score. Command retries remain idempotent after completion.
+- The response includes libero.active (including the covered player), options,
+  history, undoableId and mustExit. History displays the latest 20 entries, while
+  eligibility and presence use every active entry. Coaches have read-only access.
+- Injury/illness exceptions, re-designation of a new libero, penalties and exceptional
+  replacement procedures are outside this version. Attack/block legality is not
+  tracked because detailed rally actions are not yet recorded.
+
+| Method | Path | Access |
+| --- | --- | --- |
+| POST | /api/matches/{matchId}/sets/{setId}/libero-replacements | Active statistician, CSRF; eligible pair in current LIVE set |
+| POST | /api/matches/{matchId}/sets/{setId}/libero-replacements/{replacementId}/undo | Active statistician, CSRF; reverse-order correction |
+
+Inputs use the same command/version and participant IDs as ordinary substitutions.
+Both endpoints return the authoritative score, court, ordinary substitution and libero state.
 
 ## Initial administrator
 

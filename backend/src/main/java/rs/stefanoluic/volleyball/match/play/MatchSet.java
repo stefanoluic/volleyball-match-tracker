@@ -79,6 +79,7 @@ public class MatchSet {
         if (home) homeScore--; else awayScore--;
         scoreVersion++;
     }
+    public void advancePlayVersion() { scoreVersion++; }
     public int getNumber() { return number; }
     public MatchSetStatus getStatus() { return status; }
     public int getHomeScore() { return homeScore; }

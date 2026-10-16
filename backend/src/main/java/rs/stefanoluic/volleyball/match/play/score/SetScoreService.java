@@ -9,6 +9,8 @@ import rs.stefanoluic.volleyball.common.exception.ApiException;
 import rs.stefanoluic.volleyball.match.*;
 import rs.stefanoluic.volleyball.match.play.*;
 import rs.stefanoluic.volleyball.match.play.score.dto.*;
+import rs.stefanoluic.volleyball.match.play.substitution.SubstitutionViewService;
+import rs.stefanoluic.volleyball.match.play.libero.LiberoViewService;
 import java.util.UUID;
 
 @Service
@@ -17,8 +19,13 @@ public class SetScoreService {
     private final MatchSetRepository sets;
     private final SetPointRepository points;
     private final SetCourtService court;
-    public SetScoreService(MatchRepository matches, MatchSetRepository sets, SetPointRepository points, SetCourtService court) {
+    private final SetPlayOrderService order;
+    private final SubstitutionViewService substitutionView;
+    private final LiberoViewService liberoView;
+    public SetScoreService(MatchRepository matches, MatchSetRepository sets, SetPointRepository points, SetCourtService court,
+                           SetPlayOrderService order, SubstitutionViewService substitutionView, LiberoViewService liberoView) {
         this.matches = matches; this.sets = sets; this.points = points; this.court = court;
+        this.order = order; this.substitutionView = substitutionView; this.liberoView = liberoView;
     }
     @Transactional(readOnly = true, isolation = Isolation.REPEATABLE_READ)
     public SetScoreResponse get(UUID matchId, UUID setId) {
@@ -40,6 +47,8 @@ public class SetScoreService {
         requireVersion(set, request.version());
         if (set.hasWinningScore()) throw new ApiException(HttpStatus.CONFLICT,
                 "Postignut je rezultat za kraj seta. Potvrdite kraj ili poništite pogrešan završni poen.");
+        if (liberoView.requiresExit(set, court.get(set, true))) throw new ApiException(HttpStatus.CONFLICT,
+                "Pre narednog poena vratite zamenjenog igrača: libero ne sme biti u prednjoj liniji ili na servisu.");
         boolean home = match.getHomeTeam().getId().equals(request.scoringTeamId());
         if (!home && !match.getAwayTeam().getId().equals(request.scoringTeamId())) {
             throw new ApiException(HttpStatus.BAD_REQUEST, "Poen mora pripadati jednom od timova ove utakmice.");
@@ -67,21 +76,27 @@ public class SetScoreService {
         if (last == null || !last.getId().equals(pointId)) {
             throw new ApiException(HttpStatus.CONFLICT, "Možete poništiti samo poslednji važeći poen. Osvežite rezultat.");
         }
+        if (order.hasChangeAfter(setId, point.getExpectedVersion()))
+            throw new ApiException(HttpStatus.CONFLICT, "Prvo poništite promenu postave koja je uneta posle ovog poena.");
         set.cancelPoint(point.getScoringTeam().getId().equals(match.getHomeTeam().getId()));
         point.cancel(request.requestId(), request.version());
         points.flush(); sets.flush();
         return response(set);
     }
     private SetScoreResponse response(MatchSet set) {
-        var latest = points.findFirstBySetIdAndCancelledAtIsNullOrderBySequenceNumberDesc(set.getId())
-                .map(PointResponse::from).orElse(null);
+        var lastPoint = points.findFirstBySetIdAndCancelledAtIsNullOrderBySequenceNumberDesc(set.getId()).orElse(null);
+        var latest = lastPoint == null ? null : PointResponse.from(lastPoint);
         var recent = points.findBySetIdOrderBySequenceNumberDesc(set.getId(), PageRequest.of(0, 20))
                 .stream().map(PointResponse::from).toList();
         boolean live = set.getStatus() == MatchSetStatus.LIVE && set.getMatch().getStatus() == MatchStatus.LIVE;
+        var layout = court.get(set, live && !set.hasWinningScore());
+        var libero = liberoView.get(set, layout, lastPoint);
+        var changes = substitutionView.get(set, layout, lastPoint, libero.mustExit());
+        if (layout != null && libero.mustExit()) layout = new SetCourtResponse(null, null, layout.homeLineup(), layout.awayLineup());
         return new SetScoreResponse(set.getId(), set.getScoreVersion(), set.getHomeScore(), set.getAwayScore(),
-                set.getMatch().getStatus(), set.getStatus(), live && !set.hasWinningScore(), latest, recent,
-                live && latest != null, live && set.hasWinningScore(), set.getWinningTeamId(),
-                court.get(set, live && !set.hasWinningScore()));
+                set.getMatch().getStatus(), set.getStatus(), live && !set.hasWinningScore() && !libero.mustExit(), latest, recent,
+                live && latest != null && !changes.pointUndoBlocked(), live && set.hasWinningScore(), set.getWinningTeamId(),
+                layout, changes, libero);
     }
     private Match lock(UUID id) { return matches.findByIdForUpdate(id).orElseThrow(SetScoreService::matchNotFound); }
     private MatchSet findSet(UUID matchId, UUID setId) {

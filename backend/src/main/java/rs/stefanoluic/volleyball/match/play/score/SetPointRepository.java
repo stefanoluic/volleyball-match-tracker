@@ -13,4 +13,5 @@ public interface SetPointRepository extends JpaRepository<SetPoint, UUID> {
     Optional<SetPoint> findFirstBySetIdAndCancelledAtIsNullOrderBySequenceNumberDesc(UUID setId);
     List<SetPoint> findBySetIdOrderBySequenceNumberDesc(UUID setId, Pageable page);
     List<SetPoint> findBySetIdAndCancelledAtIsNullOrderBySequenceNumberAsc(UUID setId);
+    boolean existsBySetIdAndCancelledAtIsNullAndExpectedVersionGreaterThan(UUID setId, int expectedVersion);
 }

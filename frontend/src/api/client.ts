@@ -197,6 +197,53 @@ export interface SetScore {
   canFinish: boolean;
   winnerTeamId: string | null;
   court: SetCourt | null;
+  substitutions: SubstitutionState | null;
+  libero: LiberoState | null;
+}
+
+export interface LiberoOption extends SubstitutionOption { regularParticipantId: string; }
+export interface LiberoPresence {
+  teamId: string;
+  libero: MatchPlayer;
+  regular: MatchPlayer;
+  rotationPosition: number;
+  mustExit: boolean;
+}
+export interface LiberoState {
+  active: LiberoPresence[];
+  options: LiberoOption[];
+  history: SetSubstitution[];
+  undoableId: string | null;
+  mustExit: boolean;
+}
+
+export interface SubstitutionOption {
+  teamId: string;
+  startingPosition: number;
+  outgoing: MatchPlayer;
+  incoming: MatchPlayer[];
+}
+export interface SetSubstitution {
+  id: string;
+  teamId: string;
+  outgoing: MatchPlayer;
+  incoming: MatchPlayer;
+  homeScore: number;
+  awayScore: number;
+  createdAt: string;
+  cancelledAt: string | null;
+}
+export interface SubstitutionState {
+  homeUsed: number;
+  awayUsed: number;
+  options: SubstitutionOption[];
+  history: SetSubstitution[];
+  undoableId: string | null;
+  pointUndoBlocked: boolean;
+}
+export interface SubstituteInput extends UndoPointInput {
+  outgoingParticipantId: string;
+  incomingParticipantId: string;
 }
 
 export interface AddPointInput {
@@ -303,6 +350,14 @@ export const api = {
     post<SetScore>('/api/matches/' + matchId + '/sets/' + setId + '/points', data),
   undoPoint: (matchId: string, setId: string, pointId: string, data: UndoPointInput) =>
     post<SetScore>('/api/matches/' + matchId + '/sets/' + setId + '/points/' + pointId + '/undo', data),
+  substitute: (matchId: string, setId: string, data: SubstituteInput) =>
+    post<SetScore>('/api/matches/' + matchId + '/sets/' + setId + '/substitutions', data),
+  undoSubstitution: (matchId: string, setId: string, substitutionId: string, data: UndoPointInput) =>
+    post<SetScore>('/api/matches/' + matchId + '/sets/' + setId + '/substitutions/' + substitutionId + '/undo', data),
+  replaceLibero: (matchId: string, setId: string, data: SubstituteInput) =>
+    post<SetScore>('/api/matches/' + matchId + '/sets/' + setId + '/libero-replacements', data),
+  undoLiberoReplacement: (matchId: string, setId: string, replacementId: string, data: UndoPointInput) =>
+    post<SetScore>('/api/matches/' + matchId + '/sets/' + setId + '/libero-replacements/' + replacementId + '/undo', data),
   teamOptions: async (signal?: AbortSignal): Promise<Team[]> => {
     const teams: Team[] = [];
     let page = 0;

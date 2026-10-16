@@ -186,7 +186,7 @@ export function MatchPreparationPage({ matchId, canManage, onBack }: {
           <SavedLineup team={roster.away} rows={selectedSet.awayLineup} />
         </SimpleGrid>
         </>}
-        <Alert color="blue">Sačuvane početne postave ispod rezultata ostaju nepromenjene. Rotacioni raspored i servis prikazani su odvojeno iznad. Izmene igrača i ulasci libera još nisu implementirani.</Alert>
+        <Alert color="blue">Sačuvane početne postave ispod rezultata ostaju nepromenjene. Rotacioni raspored iznad uključuje obične izmene i zamene libera.</Alert>
       </> : editable ? <form aria-label={nextNumber ? 'Priprema seta ' + nextNumber : 'Priprema prvog seta'} onSubmit={prepare} noValidate>
         <Stack gap="xl">
           <Alert color="blue">{nextNumber ? 'Izaberite početnu šestorku za naredni set iz prijavljenih učesnika.' : 'Najpre sačuvajte učesnike preko „Prikaži sastave“. Ovde ih raspoređujete za prvi set.'}

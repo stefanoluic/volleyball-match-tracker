@@ -4,10 +4,13 @@ import { IconPlus, IconRefresh, IconArrowBackUp } from '@tabler/icons-react';
 import { useEffect, useRef, useState } from 'react';
 import { api, ApiError, errorMessage, type Match, type MatchPreparation, type MatchSet, type SetPoint, type SetScore } from '../api/client';
 import { SetCourtView } from './SetCourtView';
+import { SetSubstitutions, type SubstitutionCommand } from './SetSubstitutions';
+import { LiberoReplacements, type LiberoCommand } from './LiberoReplacements';
 
 type Command = { kind: 'add'; requestId: string; version: number; scoringTeamId: string }
   | { kind: 'undo'; requestId: string; version: number; pointId: string }
-  | { kind: 'finish'; requestId: string; version: number };
+  | { kind: 'finish'; requestId: string; version: number }
+  | SubstitutionCommand | LiberoCommand;
 
 const time = (value: string) => new Intl.DateTimeFormat('sr-Latn-RS', {
   hour: '2-digit', minute: '2-digit', second: '2-digit',
@@ -27,6 +30,10 @@ export function MatchScoreboard({ match, set, canManage, onBusyChange, onSetFini
   const [pending, setPending] = useState<Command | null>(null);
   const [confirming, setConfirming] = useState<SetPoint | null>(null);
   const [confirmFinish, setConfirmFinish] = useState(false);
+  const [substitutionEditing, setSubstitutionEditing] = useState(false);
+  const [liberoEditing, setLiberoEditing] = useState(false);
+  useEffect(() => { onBusyChange(busy || substitutionEditing || liberoEditing); }, [busy, substitutionEditing, liberoEditing, onBusyChange]);
+  useEffect(() => () => onBusyChange(false), [onBusyChange]);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -47,7 +54,7 @@ export function MatchScoreboard({ match, set, canManage, onBusyChange, onSetFini
   }
   async function execute(command: Command) {
     if (writing.current || loading || !canManage) return;
-    writing.current = true; setBusy(true); onBusyChange(true); setWriteError('');
+    writing.current = true; setBusy(true); setWriteError('');
     try {
       if (command.kind === 'finish') {
         const result = await api.finishSet(match.id, set.id, { requestId: command.requestId, version: command.version });
@@ -60,7 +67,17 @@ export function MatchScoreboard({ match, set, canManage, onBusyChange, onSetFini
         notifications.show({ title: 'Set je završen', message: 'Konačan rezultat je sačuvan.', color: 'teal', role: 'status' });
         return;
       }
-      const result = command.kind === 'add'
+      const result = command.kind === 'libero'
+        ? await api.replaceLibero(match.id, set.id, { requestId: command.requestId, version: command.version,
+          outgoingParticipantId: command.outgoingParticipantId, incomingParticipantId: command.incomingParticipantId })
+        : command.kind === 'undoLibero'
+        ? await api.undoLiberoReplacement(match.id, set.id, command.replacementId, { requestId: command.requestId, version: command.version })
+        : command.kind === 'substitute'
+        ? await api.substitute(match.id, set.id, { requestId: command.requestId, version: command.version,
+          outgoingParticipantId: command.outgoingParticipantId, incomingParticipantId: command.incomingParticipantId })
+        : command.kind === 'undoSubstitution'
+        ? await api.undoSubstitution(match.id, set.id, command.substitutionId, { requestId: command.requestId, version: command.version })
+        : command.kind === 'add'
         ? await api.addPoint(match.id, set.id, {
           requestId: command.requestId, version: command.version, scoringTeamId: command.scoringTeamId,
         })
@@ -71,16 +88,25 @@ export function MatchScoreboard({ match, set, canManage, onBusyChange, onSetFini
       if (command.kind === 'undo') notifications.show({
         title: 'Poen je poništen', message: 'Rezultat je ažuriran. Unos ostaje vidljiv u istoriji.', color: 'teal', role: 'status',
       });
+      if (command.kind === 'substitute' || command.kind === 'undoSubstitution') notifications.show({
+        title: command.kind === 'substitute' ? 'Izmena je sačuvana' : 'Izmena je poništena',
+        message: 'Raspored igrača je ažuriran.', color: 'teal', role: 'status',
+      });
+      if (command.kind === 'libero' || command.kind === 'undoLibero') notifications.show({
+        title: command.kind === 'libero' ? 'Zamena libera je sačuvana' : 'Zamena libera je poništena',
+        message: 'Raspored igrača je ažuriran.', color: 'violet', role: 'status',
+      });
     } catch (failure) {
       setWriteError(errorMessage(failure)); setConfirming(null); setConfirmFinish(false);
       // Network/5xx failures may happen after a committed write. Retrying must keep the same command ID.
       setPending(!(failure instanceof ApiError) || failure.status >= 500 ? command : null);
     } finally {
-      writing.current = false; setBusy(false); onBusyChange(false);
+      writing.current = false; setBusy(false);
     }
   }
   const editable = canManage && !!score && (score.canRecord || score.canUndo || score.canFinish);
-  const blocked = busy || loading || !!loadError || !!writeError || !!pending || !!confirming || confirmFinish;
+  const unavailable = busy || loading || !!loadError || !!writeError || !!pending || !!confirming || confirmFinish;
+  const blocked = unavailable || substitutionEditing || liberoEditing;
   function add(teamId: string) {
     if (!score?.canRecord || !editable || blocked || writing.current) return;
     void execute({ kind: 'add', requestId: crypto.randomUUID(), version: score.version, scoringTeamId: teamId });
@@ -93,7 +119,7 @@ export function MatchScoreboard({ match, set, canManage, onBusyChange, onSetFini
           <Title order={2} size="h3">Set {set.number}</Title>
           <Group gap="xs"><Badge color={score?.setStatus === 'FINISHED' ? 'gray' : 'teal'}>
             {(score?.setStatus ?? set.status) === 'LIVE' ? 'U toku' : 'Završen'}</Badge>
-            <Button variant="light" size="xs" disabled={busy || loading} onClick={refresh}
+            <Button variant="light" size="xs" disabled={busy || loading || substitutionEditing || liberoEditing} onClick={refresh}
               leftSection={<IconRefresh size={15} />}>Osveži rezultat</Button></Group>
         </Group>
         {loading && !score ? <Skeleton height={55} role="status" aria-label="Učitavanje rezultata" />
@@ -151,6 +177,10 @@ export function MatchScoreboard({ match, set, canManage, onBusyChange, onSetFini
       </Stack>
     </Paper>
     {score && !loading && !loadError && !writeError && <SetCourtView match={match} score={score} />}
+    {score && <LiberoReplacements match={match} score={score} canManage={canManage} disabled={unavailable || substitutionEditing}
+      busy={busy} onCommand={(command) => void execute(command)} onEditingChange={setLiberoEditing} />}
+    {score && <SetSubstitutions match={match} score={score} canManage={canManage} disabled={unavailable || liberoEditing}
+      busy={busy} onCommand={(command) => void execute(command)} onEditingChange={setSubstitutionEditing} />}
     <Paper component="section" aria-label="Poslednji poeni" withBorder p="lg" className="roster-team">
       <Stack gap="md">
         <Group justify="space-between"><Title order={2} size="h4">Poslednji poeni</Title>
