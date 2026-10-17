@@ -166,6 +166,8 @@ export interface StartNextSetInput extends StartMatchInput {
   previousSetVersion: number;
 }
 
+export type PointActionType = 'UNSPECIFIED' | 'ATTACK' | 'BLOCK' | 'SERVICE_ACE' | 'OPPONENT_ERROR';
+
 export interface SetPoint {
   id: string;
   sequenceNumber: number;
@@ -174,6 +176,8 @@ export interface SetPoint {
   awayScoreAfter: number;
   createdAt: string;
   cancelledAt: string | null;
+  actionType: PointActionType;
+  participant: MatchPlayer | null;
 }
 
 export interface SetCourt {
@@ -250,11 +254,52 @@ export interface AddPointInput {
   requestId: string;
   version: number;
   scoringTeamId: string;
+  actionType?: PointActionType;
+  participantId?: string | null;
 }
 
 export interface UndoPointInput {
   requestId: string;
   version: number;
+}
+
+export interface PlayerStatistics {
+  participant: MatchPlayer;
+  attackPoints: number;
+  blockPoints: number;
+  serviceAces: number;
+  scoringPoints: number;
+  errors: number;
+}
+
+export interface TeamStatistics {
+  teamId: string;
+  name: string;
+  totalPoints: number;
+  attackPoints: number;
+  blockPoints: number;
+  serviceAces: number;
+  opponentErrors: number;
+  unspecifiedPoints: number;
+  errors: number;
+  unattributedErrors: number;
+  players: PlayerStatistics[];
+}
+
+export interface StatisticsSet {
+  id: string;
+  number: number;
+  status: 'LIVE' | 'FINISHED';
+  scoreVersion: number;
+}
+
+export interface MatchStatistics {
+  matchId: string;
+  setId: string | null;
+  matchStatus: MatchStatus;
+  sets: StatisticsSet[];
+  home: TeamStatistics;
+  away: TeamStatistics;
 }
 
 export class ApiError extends Error {
@@ -338,6 +383,9 @@ export const api = {
   saveMatchRoster: (matchId: string, data: MatchRosterInput) => mutate<MatchRoster>('PUT', '/api/matches/' + matchId + '/roster', data),
   matchPreparation: (matchId: string, signal?: AbortSignal) =>
     get<MatchPreparation>('/api/matches/' + matchId + '/preparation', signal),
+  matchStatistics: (matchId: string, setId: string | null, signal?: AbortSignal) =>
+    get<MatchStatistics>('/api/matches/' + matchId + '/statistics'
+      + (setId ? '?' + new URLSearchParams({ setId }) : ''), signal),
   startMatch: (matchId: string, data: StartMatchInput) =>
     post<MatchPreparation>('/api/matches/' + matchId + '/start', data),
   startNextSet: (matchId: string, data: StartNextSetInput) =>

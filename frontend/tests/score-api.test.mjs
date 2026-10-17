@@ -39,3 +39,16 @@ test('score conflict is surfaced without an implicit retry', async () => {
   await assert.rejects(api.addPoint('match', 'set', { requestId: 'id', version: 0, scoringTeamId: 'home' }), /promenjen/);
   assert.equal(writes, 1);
 });
+
+test('detailed point sends action and match participant unchanged, including unattributed team errors', async () => {
+  const sent = [];
+  mock.method(globalThis, 'fetch', async (path, options) => {
+    if (path === '/api/auth/csrf') return Response.json({ headerName: 'X-CSRF-TOKEN', token: 'fresh' });
+    sent.push(JSON.parse(options.body)); return Response.json({ version: 1 });
+  });
+  for (const details of [{ actionType: 'ATTACK', participantId: 'match-player' }, { actionType: 'OPPONENT_ERROR', participantId: null }]) {
+    const input = { requestId: 'id', version: 0, scoringTeamId: 'home', ...details };
+    await api.addPoint('match', 'set', input);
+    assert.deepEqual(sent.at(-1), input);
+  }
+});

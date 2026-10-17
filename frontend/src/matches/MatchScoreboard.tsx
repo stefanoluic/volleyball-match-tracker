@@ -6,8 +6,11 @@ import { api, ApiError, errorMessage, type Match, type MatchPreparation, type Ma
 import { SetCourtView } from './SetCourtView';
 import { SetSubstitutions, type SubstitutionCommand } from './SetSubstitutions';
 import { LiberoReplacements, type LiberoCommand } from './LiberoReplacements';
+import { PointDetailsForm, type AddPointCommand } from './PointDetailsForm';
+import { pointActionLabels, pointPlayerLabel } from './pointDetails';
+import { MatchStatisticsPanel } from './MatchStatisticsPanel';
 
-type Command = { kind: 'add'; requestId: string; version: number; scoringTeamId: string }
+type Command = AddPointCommand
   | { kind: 'undo'; requestId: string; version: number; pointId: string }
   | { kind: 'finish'; requestId: string; version: number }
   | SubstitutionCommand | LiberoCommand;
@@ -32,7 +35,8 @@ export function MatchScoreboard({ match, set, canManage, onBusyChange, onSetFini
   const [confirmFinish, setConfirmFinish] = useState(false);
   const [substitutionEditing, setSubstitutionEditing] = useState(false);
   const [liberoEditing, setLiberoEditing] = useState(false);
-  useEffect(() => { onBusyChange(busy || substitutionEditing || liberoEditing); }, [busy, substitutionEditing, liberoEditing, onBusyChange]);
+  const [pointEditing, setPointEditing] = useState(false);
+  useEffect(() => { onBusyChange(busy || substitutionEditing || liberoEditing || pointEditing); }, [busy, substitutionEditing, liberoEditing, pointEditing, onBusyChange]);
   useEffect(() => () => onBusyChange(false), [onBusyChange]);
 
   useEffect(() => {
@@ -80,6 +84,7 @@ export function MatchScoreboard({ match, set, canManage, onBusyChange, onSetFini
         : command.kind === 'add'
         ? await api.addPoint(match.id, set.id, {
           requestId: command.requestId, version: command.version, scoringTeamId: command.scoringTeamId,
+          ...(command.actionType !== undefined ? { actionType: command.actionType, participantId: command.participantId ?? null } : {}),
         })
         : await api.undoPoint(match.id, set.id, command.pointId, {
           requestId: command.requestId, version: command.version,
@@ -106,7 +111,7 @@ export function MatchScoreboard({ match, set, canManage, onBusyChange, onSetFini
   }
   const editable = canManage && !!score && (score.canRecord || score.canUndo || score.canFinish);
   const unavailable = busy || loading || !!loadError || !!writeError || !!pending || !!confirming || confirmFinish;
-  const blocked = unavailable || substitutionEditing || liberoEditing;
+  const blocked = unavailable || substitutionEditing || liberoEditing || pointEditing;
   function add(teamId: string) {
     if (!score?.canRecord || !editable || blocked || writing.current) return;
     void execute({ kind: 'add', requestId: crypto.randomUUID(), version: score.version, scoringTeamId: teamId });
@@ -119,7 +124,7 @@ export function MatchScoreboard({ match, set, canManage, onBusyChange, onSetFini
           <Title order={2} size="h3">Set {set.number}</Title>
           <Group gap="xs"><Badge color={score?.setStatus === 'FINISHED' ? 'gray' : 'teal'}>
             {(score?.setStatus ?? set.status) === 'LIVE' ? 'U toku' : 'Završen'}</Badge>
-            <Button variant="light" size="xs" disabled={busy || loading || substitutionEditing || liberoEditing} onClick={refresh}
+            <Button variant="light" size="xs" disabled={busy || loading || substitutionEditing || liberoEditing || pointEditing} onClick={refresh}
               leftSection={<IconRefresh size={15} />}>Osveži rezultat</Button></Group>
         </Group>
         {loading && !score ? <Skeleton height={55} role="status" aria-label="Učitavanje rezultata" />
@@ -142,6 +147,9 @@ export function MatchScoreboard({ match, set, canManage, onBusyChange, onSetFini
             <Button size="md" color="teal" disabled={blocked || !score.canRecord} leftSection={<IconPlus size={18} />}
               onClick={() => add(match.awayTeam.id)}>Poen za gosta</Button>
           </SimpleGrid>
+          <Text size="xs" c="dimmed">Gornja dugmad dodaju poen bez podataka o akciji i igraču. Za statistiku koristite detaljan unos umesto brzog.</Text>
+          <PointDetailsForm match={match} score={score} disabled={unavailable || substitutionEditing || liberoEditing}
+            busy={busy} onCommand={(command) => void execute(command)} onEditingChange={setPointEditing} />
           <Group justify="flex-end"><Button variant="light" color="red" disabled={blocked || !score.canUndo}
             leftSection={<IconArrowBackUp size={17} />} onClick={() => setConfirming(score.lastActivePoint)}>
             Poništi poslednji poen
@@ -173,14 +181,16 @@ export function MatchScoreboard({ match, set, canManage, onBusyChange, onSetFini
         </Alert>}
         {score && !editable && <Text size="sm" c="dimmed">{canManage
           ? 'Unos nije dostupan jer utakmica ili set nisu u toku.' : 'Pristup za pregled. Rezultat osvežavate ručno.'}</Text>}
-        <Text size="xs" c="dimmed">Za sada beležimo samo tim kome ide poen. Servis i rotacija prate važeće poene; kraj seta potvrđuje statističar.</Text>
+        <Text size="xs" c="dimmed">Servis i rotacija prate važeće poene; kraj seta potvrđuje statističar. Detalji opisuju samo završnu akciju, ne sve dodire lopte.</Text>
       </Stack>
     </Paper>
     {score && !loading && !loadError && !writeError && <SetCourtView match={match} score={score} />}
-    {score && <LiberoReplacements match={match} score={score} canManage={canManage} disabled={unavailable || substitutionEditing}
+    {score && <LiberoReplacements match={match} score={score} canManage={canManage} disabled={unavailable || substitutionEditing || pointEditing}
       busy={busy} onCommand={(command) => void execute(command)} onEditingChange={setLiberoEditing} />}
-    {score && <SetSubstitutions match={match} score={score} canManage={canManage} disabled={unavailable || liberoEditing}
+    {score && <SetSubstitutions match={match} score={score} canManage={canManage} disabled={unavailable || liberoEditing || pointEditing}
       busy={busy} onCommand={(command) => void execute(command)} onEditingChange={setSubstitutionEditing} />}
+    {score && <MatchStatisticsPanel match={match} revision={score.setId + ':' + score.version + ':' + score.setStatus}
+      disabled={busy || loading || !!loadError || !!writeError || !!pending || substitutionEditing || liberoEditing || pointEditing} />}
     <Paper component="section" aria-label="Poslednji poeni" withBorder p="lg" className="roster-team">
       <Stack gap="md">
         <Group justify="space-between"><Title order={2} size="h4">Poslednji poeni</Title>
@@ -189,6 +199,8 @@ export function MatchScoreboard({ match, set, canManage, onBusyChange, onSetFini
         {score?.points.map((point) => <div key={point.id} className="roster-player">
           <Group justify="space-between">
             <div><Text size="sm" fw={600}>#{point.sequenceNumber} · Poen za {teamName(point.scoringTeamId)}</Text>
+              <Text size="sm">{pointActionLabels[point.actionType] ?? pointActionLabels.UNSPECIFIED}
+                {point.participant && ' · ' + (point.actionType === 'OPPONENT_ERROR' ? 'Greška: ' : '') + pointPlayerLabel(point.participant)}</Text>
               <Text size="xs" c="dimmed">{time(point.createdAt)} · Rezultat posle unosa: {point.homeScoreAfter}:{point.awayScoreAfter}</Text></div>
             {point.cancelledAt && <Badge color="red" variant="light">Poništen</Badge>}
           </Group>

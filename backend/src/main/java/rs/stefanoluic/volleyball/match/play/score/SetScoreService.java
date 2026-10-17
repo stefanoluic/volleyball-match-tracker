@@ -12,6 +12,7 @@ import rs.stefanoluic.volleyball.match.play.score.dto.*;
 import rs.stefanoluic.volleyball.match.play.substitution.SubstitutionViewService;
 import rs.stefanoluic.volleyball.match.play.libero.LiberoViewService;
 import java.util.UUID;
+import java.util.Objects;
 
 @Service
 public class SetScoreService {
@@ -22,10 +23,13 @@ public class SetScoreService {
     private final SetPlayOrderService order;
     private final SubstitutionViewService substitutionView;
     private final LiberoViewService liberoView;
+    private final PointDetailsService details;
     public SetScoreService(MatchRepository matches, MatchSetRepository sets, SetPointRepository points, SetCourtService court,
-                           SetPlayOrderService order, SubstitutionViewService substitutionView, LiberoViewService liberoView) {
+                           SetPlayOrderService order, SubstitutionViewService substitutionView, LiberoViewService liberoView,
+                           PointDetailsService details) {
         this.matches = matches; this.sets = sets; this.points = points; this.court = court;
         this.order = order; this.substitutionView = substitutionView; this.liberoView = liberoView;
+        this.details = details;
     }
     @Transactional(readOnly = true, isolation = Isolation.REPEATABLE_READ)
     public SetScoreResponse get(UUID matchId, UUID setId) {
@@ -40,6 +44,8 @@ public class SetScoreService {
         SetPoint existing = points.findBySetIdAndRequestId(setId, request.requestId()).orElse(null);
         if (existing != null) {
             if (!existing.getScoringTeam().getId().equals(request.scoringTeamId())
+                    || existing.getActionType() != request.actionType()
+                    || !Objects.equals(existing.getParticipant() == null ? null : existing.getParticipant().getId(), request.participantId())
                     || existing.getExpectedVersion() != request.version()) throw reusedKey();
             return response(set);
         }
@@ -47,15 +53,17 @@ public class SetScoreService {
         requireVersion(set, request.version());
         if (set.hasWinningScore()) throw new ApiException(HttpStatus.CONFLICT,
                 "Postignut je rezultat za kraj seta. Potvrdite kraj ili poništite pogrešan završni poen.");
-        if (liberoView.requiresExit(set, court.get(set, true))) throw new ApiException(HttpStatus.CONFLICT,
+        var layout = court.get(set, true);
+        if (liberoView.requiresExit(set, layout)) throw new ApiException(HttpStatus.CONFLICT,
                 "Pre narednog poena vratite zamenjenog igrača: libero ne sme biti u prednjoj liniji ili na servisu.");
         boolean home = match.getHomeTeam().getId().equals(request.scoringTeamId());
         if (!home && !match.getAwayTeam().getId().equals(request.scoringTeamId())) {
             throw new ApiException(HttpStatus.BAD_REQUEST, "Poen mora pripadati jednom od timova ove utakmice.");
         }
+        var participant = details.validate(match, request, layout);
         set.recordPoint(home);
         points.saveAndFlush(new SetPoint(set, home ? match.getHomeTeam() : match.getAwayTeam(),
-                request.requestId(), request.version()));
+                request.requestId(), request.version(), request.actionType(), participant));
         sets.flush();
         return response(set);
     }

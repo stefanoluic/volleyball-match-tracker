@@ -7,8 +7,9 @@ approval, blocking and permanent deletion of blocked user accounts, and team
 management, team rosters, match scheduling, match participant selection and
 starting sets with saved initial lineups, point recording and undo, automatic
 service/rotation tracking, ordinary player substitutions, libero replacements,
-set completion and match completion.
-Detailed event classification, automatic live updates, statistics and reporting
+set completion, match completion, optional point classification/player attribution
+and team/player statistics by set or whole match.
+Automatic live updates, coaching recommendations and reporting
 are not implemented yet.
 
 ## Stack
@@ -119,6 +120,8 @@ roster writes, match scheduling, time-zone conversion, match/team deletion guard
 match participant snapshots, stale-save protection, first-set lineups, atomic match
 start, duplicate-start protection, point history, last-point undo, idempotent retries,
 concurrent score writes, substitutions/libero replacements and reverse-order corrections,
+point classification, pre-rally player eligibility and migration of existing score-only points,
+whole-match/set aggregates, cancelled-point exclusion, roster snapshots and statistics access,
 server/rotation recovery after undo,
 deuce/tie-break rules, complete 3:0/3:2 match flows,
 set transitions and role-based access. Integration tests
@@ -193,6 +196,16 @@ Composite foreign keys keep both participants in the same match/team as the set.
 The twelfth migration creates volleyball.libero_replacements with the same command,
 version, score and cancellation metadata. It additionally records the covered regular
 participant so returns and switches to the second libero preserve the correct player.
+
+The thirteenth migration adds action_type, match_id and optional participant/team
+references to set_points. Existing entries remain UNSPECIFIED with no attributed
+player; their original score and history are preserved. Composite foreign keys
+keep the participant in the same match, and check constraints distinguish points
+credited to the scorer's player from errors attributed to the opposing side.
+
+The fourteenth migration adds a partial index on active points by match and set
+for the statistics query. Statistics are derived from points, not stored in a
+separate totals table.
 
 ## Accounts and sessions
 
@@ -328,7 +341,8 @@ from application user accounts and have no login credentials.
 - No duplicate-fixture or overlapping-schedule rule is imposed in this version.
   First-set initial lineups and a 0:0 score are recorded at start. Points can then
   be added and undone. Subsequent sets have their own initial lineups and score.
-  Detailed action types and statistics are not implemented yet.
+  Points optionally include a finishing action and player. Team/player statistics
+  can be read for one set or the whole match.
 - Changing either team requires clearing and saving both participant rosters first.
   The date/time may still be edited with saved rosters.
 - Deleting a scheduled match also deletes its saved participant rows. The
@@ -413,9 +427,10 @@ firstServingTeamId. The lineup arrays contain six match participant IDs
 
 ## Points and score corrections
 
-- In Pregled utakmice, statisticians use Poen za domaćina or Poen za gosta.
-  Recording stores a point and updates its set's score in one transaction.
-  The current version records only the winning team, not a player or action type.
+- In Pregled utakmice, statisticians use Poen za domaćina or Poen za gosta for
+  score-only entry, or Detaljan unos poena for a finishing action and optional
+  player as described below. Either workflow stores exactly one point and updates
+  its set's score in one transaction; do not enter the same rally through both.
 - Poništi poslednji poen asks for inline confirmation and cancels only the latest
   non-cancelled point. The score decreases on that side; previous points may then
   be undone in reverse order. Cancelled entries remain visible and never count
@@ -451,9 +466,90 @@ firstServingTeamId. The lineup arrays contain six match participant IDs
 | POST | /api/matches/{matchId}/sets/{setId}/points | Active statistician, CSRF required; match and set LIVE |
 | POST | /api/matches/{matchId}/sets/{setId}/points/{pointId}/undo | Active statistician, CSRF required; match and set LIVE |
 
-Point input contains requestId, version and scoringTeamId. Undo input contains
+Point input contains requestId, version and scoringTeamId, with optional actionType
+and participantId (a match_players ID, not a players ID). Undo input contains
 requestId and version; the point ID is in the URL. Completed-command replays are
 read-only responses and remain safe even if the match/set was subsequently closed.
+
+### Point details
+
+- Detaljan unos poena opens an inline form to choose the scoring team, finishing
+  action and player, followed by a review and confirmation. It is an alternative
+  to quick score-only entry, not an additional action on an existing point.
+- ATTACK attributes a scoring attack to a current on-court player of the winning
+  team. Back-row players and liberos are not automatically excluded: attack
+  legality also depends on contact height and take-off location, which are not
+  tracked. The operator records the awarded result, not an automatically refereed rally.
+- BLOCK attributes a scoring block to a non-libero in rotational positions 2–4
+  BEFORE the rally. SERVICE_ACE requires the current server of the scoring team;
+  the form selects that player automatically. A receiving team cannot receive an ace.
+  These eligibility guards follow [FIVB rules 14.1 and 19.3](https://www.fivb.com/wp-content/uploads/2025/01/FIVB-Volleyball_Rules2025_2028-EN-v05.pdf).
+- OPPONENT_ERROR awards the point to the selected team, but attributes the error
+  only to an on-court player of the opposing team. The individual may be omitted
+  for team faults or unknown attribution. Such points are not individual scoring points.
+- UNSPECIFIED is the default when actionType is omitted or null. It has no player.
+  Old history and quick-entry points retain this classification rather than
+  inventing statistics. Classified entry is disabled if the court is unavailable;
+  score-only entry remains available subject to normal scoring rules.
+- Eligibility uses the six actually on court after ordinary/libero changes and
+  before the point's rotation. Bench players and players covered by a libero are
+  excluded. A required libero exit still blocks every new point.
+- Details are saved with the original point, using the match participant's saved
+  name/jersey snapshot. Undo retains those details on the cancelled row. Corrections
+  use the existing reverse-order undo then re-entry; editing old details is not supported.
+- Idempotency compares action and participant as well as team/version. A retry of
+  a committed command returns current state without checking that old player
+  against a later rotation or resurrecting a cancelled point. Uncertain writes
+  retain the exact original command and details for explicit retry.
+- While a detail draft is open, quick points, player changes, refresh and parent
+  navigation are disabled. Cancel the draft before leaving or refreshing after a
+  conflict. Coaching staff can read details/history but cannot enter them.
+- This is a simplified finishing-action record, not full rally statistics: no
+  attack attempts, reception quality, assists, digs or collective block credit
+  are captured yet. Counting these records alone cannot yield success percentages.
+
+## Team and player statistics
+
+- Open Prikaži statistiku in Pregled utakmice. The section expands inline and
+  initially shows Cela utakmica, with a selector for any saved set. The summary
+  cards show each team's total points; tables compare teams and list player totals.
+  It is available to statisticians and coaches, including after match completion.
+- Team points are split into attack points, scoring blocks, service aces, points
+  awarded for opponent errors and UNSPECIFIED points. These categories sum to
+  totalPoints. Old/quick-entry points stay unspecified and are not attributed to players.
+- Player scoringPoints is attackPoints + blockPoints + serviceAces. An attributed
+  opponent error increments the error count of the opposing player/team, never
+  that player's scoring points. Team errors also show unattributedErrors for
+  team faults or unknown individuals. These are only recorded rally-ending
+  errors, not every error that might occur during play.
+- All registered match participants appear, sorted by saved jersey number and ID,
+  including substitutes/liberos and zero-stat players. Zero counts do not prove
+  that a player did not participate. Names, numbers and IDs come from the saved
+  match roster, not the current editable player record.
+- Aggregation runs in the database over ALL non-cancelled points in the selected
+  scope, not only the latest 20 history entries. Whole-match totals include both
+  completed and live sets. Undo removes the point/error from the totals while
+  preserving history; a retry of a committed command never double-counts it.
+- GET reads use one repeatable-read transaction for match, set metadata, roster
+  and aggregates. The response includes the scope and each set's scoreVersion
+  so consumers can identify the source snapshot. There is no statistics write endpoint.
+- No rates, attack attempts, reception quality, assists, playing time, efficiency
+  percentages or team rankings are inferred from incomplete finishing-action data.
+- The frontend fetches only when expanded. Local score additions/undo and other
+  score-version changes refresh the open statistics section. For changes on
+  another device, use Osveži statistiku; polling/WebSocket updates are still pending.
+- Loading, failed or superseded requests never leave old totals labelled as the
+  new scope. Scope changes/unmount abort obsolete reads; refresh can recover from
+  errors. Statistics are hidden/disabled during an open score/player-change draft,
+  an in-flight command or an uncertain score until it is resolved.
+
+| Method | Path | Access |
+| --- | --- | --- |
+| GET | /api/matches/{matchId}/statistics | Active statistician or coach; optional setId |
+
+Omit setId for the whole match. A supplied set ID must belong to the match;
+missing/foreign sets return 404 and malformed UUIDs return 400. Scheduled matches
+are readable as zero totals, even without participants or sets.
 
 ## Set completion and subsequent sets
 
@@ -604,7 +700,8 @@ and version. Both return the authoritative score, court and substitution state.
   eligibility and presence use every active entry. Coaches have read-only access.
 - Injury/illness exceptions, re-designation of a new libero, penalties and exceptional
   replacement procedures are outside this version. Attack/block legality is not
-  tracked because detailed rally actions are not yet recorded.
+  tracked beyond the basic scoring-block eligibility guard; ball height, take-off
+  location and other rally contacts are not recorded.
 
 | Method | Path | Access |
 | --- | --- | --- |

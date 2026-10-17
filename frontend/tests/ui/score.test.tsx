@@ -17,7 +17,7 @@ const zero: SetScore = { setId: set.id, version: 0, homeScore: 0, awayScore: 0,
   matchStatus: 'LIVE', setStatus: 'LIVE', canRecord: true, lastActivePoint: null, points: [],
   canUndo: false, canFinish: false, winnerTeamId: null, court: null, substitutions: null, libero: null };
 const point: SetPoint = { id: 'point', sequenceNumber: 1, scoringTeamId: home.id,
-  homeScoreAfter: 1, awayScoreAfter: 0, createdAt: home.createdAt, cancelledAt: null };
+  homeScoreAfter: 1, awayScoreAfter: 0, createdAt: home.createdAt, cancelledAt: null, actionType: 'UNSPECIFIED', participant: null };
 const one: SetScore = { ...zero, version: 1, homeScore: 1, lastActivePoint: point, points: [point], canUndo: true };
 const undone: SetScore = { ...zero, version: 2, points: [{ ...point, cancelledAt: '2026-10-14T12:01:00Z' }] };
 
