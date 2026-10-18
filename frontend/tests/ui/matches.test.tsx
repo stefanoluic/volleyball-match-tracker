@@ -53,6 +53,8 @@ test('create uses existing teams and converts browser local time to UTC', async 
   await openCreate();
   expect(screen.queryByRole('dialog')).toBeNull();
   expect(document.activeElement).toBe(screen.getByRole('heading', { name: 'Nova utakmica' }));
+  expect(screen.getByText('Posle čuvanja prijavite sastave i izaberite početne postave. Utakmica počinje tek nakon potvrde statističara.')).toBeTruthy();
+  expect(screen.queryByText(/Praćenje rezultata biće dodato kasnije/)).toBeNull();
   await chooseTeams();
   setDate();
   fireEvent.click(screen.getByRole('button', { name: 'Sačuvaj utakmicu' }));

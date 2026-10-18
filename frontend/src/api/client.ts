@@ -300,6 +300,24 @@ export interface MatchStatistics {
   sets: StatisticsSet[];
   home: TeamStatistics;
   away: TeamStatistics;
+  analysis: CoachingAnalysis;
+}
+
+export interface CoachingRecommendation {
+  code: 'RECORDED_ERRORS' | 'OPPONENT_ACES' | 'CONCENTRATED_SCORING';
+  title: string;
+  observation: string;
+  suggestion: string;
+  participantId: string | null;
+}
+
+export interface CoachingAnalysis {
+  availability: 'INSUFFICIENT_DATA' | 'INCOMPLETE_DETAILS' | 'AVAILABLE';
+  totalRallies: number;
+  unspecifiedRallies: number;
+  minimumRallies: number;
+  minimumDetailCoveragePercent: number;
+  teams: { teamId: string; name: string; items: CoachingRecommendation[] }[];
 }
 
 export class ApiError extends Error {

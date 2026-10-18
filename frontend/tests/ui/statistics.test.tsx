@@ -20,6 +20,7 @@ function team(teamId: string, name: string): TeamStatistics {
     players: [1,3,8].map(n=>({ participant: player(teamId,n), attackPoints: 0, blockPoints: 0, serviceAces: 0, scoringPoints: 0, errors: 0 })) };
 }
 const empty: MatchStatistics = { matchId: match.id, setId: null, matchStatus: 'LIVE',
+  analysis: { availability: 'INSUFFICIENT_DATA', totalRallies: 0, unspecifiedRallies: 0, minimumRallies: 10, minimumDetailCoveragePercent: 80, teams: [] },
   sets: [{ id: 'set1', number: 1, status: 'FINISHED', scoreVersion: 28 }, { id: 'set2', number: 2, status: 'LIVE', scoreVersion: 1 }],
   home: team(home.id,home.name), away: team(away.id,away.name) };
 const filled: MatchStatistics = { ...empty,

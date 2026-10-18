@@ -6,6 +6,7 @@ import org.springframework.transaction.annotation.Isolation;
 import org.springframework.transaction.annotation.Transactional;
 import rs.stefanoluic.volleyball.common.exception.ApiException;
 import rs.stefanoluic.volleyball.match.MatchRepository;
+import rs.stefanoluic.volleyball.match.recommendation.CoachingRecommendationService;
 import rs.stefanoluic.volleyball.match.play.MatchSetRepository;
 import rs.stefanoluic.volleyball.match.play.score.SetPointRepository;
 import rs.stefanoluic.volleyball.match.roster.MatchPlayerRepository;
@@ -22,10 +23,12 @@ public class MatchStatisticsService {
     private final MatchSetRepository sets;
     private final MatchPlayerRepository participants;
     private final SetPointRepository points;
+    private final CoachingRecommendationService recommendations;
 
     public MatchStatisticsService(MatchRepository matches, MatchSetRepository sets,
-                                  MatchPlayerRepository participants, SetPointRepository points) {
+                                  MatchPlayerRepository participants, SetPointRepository points, CoachingRecommendationService recommendations) {
         this.matches = matches; this.sets = sets; this.participants = participants; this.points = points;
+        this.recommendations = recommendations;
     }
 
     @Transactional(readOnly = true, isolation = Isolation.REPEATABLE_READ)
@@ -60,8 +63,11 @@ public class MatchStatisticsService {
                 }
             }
         }
+        var homeStatistics = home.response();
+        var awayStatistics = away.response();
         return new MatchStatisticsResponse(matchId, setId, match.getStatus(),
-                matchSets.stream().map(StatisticsSet::from).toList(), home.response(), away.response());
+                matchSets.stream().map(StatisticsSet::from).toList(), homeStatistics, awayStatistics,
+                recommendations.analyze(homeStatistics, awayStatistics));
     }
 
     private static class PlayerTotals {

@@ -20,6 +20,7 @@ const preparation: MatchPreparation = { roster: { match, version: 0, home: { tea
 const emptyTeam = { totalPoints: 0, attackPoints: 0, blockPoints: 0, serviceAces: 0, opponentErrors: 0, unspecifiedPoints: 0,
   errors: 0, unattributedErrors: 0, players: [] };
 const statistics: MatchStatistics = { matchId: match.id, setId: null, matchStatus: 'LIVE',
+  analysis: { availability: 'INSUFFICIENT_DATA', totalRallies: 0, unspecifiedRallies: 0, minimumRallies: 10, minimumDetailCoveragePercent: 80, teams: [] },
   sets: [{ id: first.id, number: 1, status: 'LIVE', scoreVersion: 0 }],
   home: { ...emptyTeam, teamId: home.id, name: home.name }, away: { ...emptyTeam, teamId: away.id, name: away.name } };
 const advance = async (ms = 3000) => { await act(async () => { await vi.advanceTimersByTimeAsync(ms); }); };
@@ -119,4 +120,64 @@ test('expanded coach statistics poll independently; collapsed statistics and wri
   await act(async () => fireEvent.click(screen.getByRole('button', { name: 'Sakrij statistiku' })));
   const count = vi.mocked(api.matchStatistics).mock.calls.length;
   await advance(30000); expect(api.matchStatistics).toHaveBeenCalledTimes(count);
+});
+
+test('match completion reloads whole-match statistics even when the coach keeps a historical set selected', async () => {
+  const ended = { ...first, status: 'FINISHED' as const, homeScore: 25, scoreVersion: 26, winnerTeamId: home.id };
+  const third = { ...first, id: 'set3', number: 3, homeScore: 24, scoreVersion: 24 };
+  let current: MatchPreparation = { ...preparation, firstSet: ended,
+    sets: [ended, { ...ended, id: 'set2', number: 2 }, third], currentSet: third, homeSetsWon: 2 };
+  vi.mocked(api.matchPreparation).mockImplementation(async () => current);
+  vi.mocked(api.setScore).mockImplementation(async (_match, id) => ({ ...zero, setId: id,
+    version: 26, homeScore: 25, setStatus: 'FINISHED', canRecord: false }));
+  vi.mocked(api.matchStatistics).mockResolvedValue({ ...statistics,
+    home: { ...statistics.home, totalPoints: 74, unspecifiedPoints: 74 } });
+  await act(async () => { render(wrap(<MatchPreparationPage matchId={match.id} canManage={false} onBack={() => {}} />)); });
+  await act(async () => fireEvent.click(screen.getByRole('combobox', { name: 'Set za pregled' })));
+  await act(async () => fireEvent.click(screen.getByRole('option', { name: 'Set 1 · 25:0 · Završen' })));
+  await act(async () => fireEvent.click(screen.getByRole('button', { name: 'Prikaži statistiku' })));
+  expect(screen.getByText('74 poena')).toBeTruthy();
+  current = { ...current, roster: { ...current.roster, match: { ...match, status: 'FINISHED' } },
+    sets: [...current.sets.slice(0, 2), { ...third, status: 'FINISHED', homeScore: 25, scoreVersion: 26 }],
+    currentSet: null, homeSetsWon: 3 };
+  vi.mocked(api.matchStatistics).mockResolvedValue({ ...statistics, matchStatus: 'FINISHED',
+    home: { ...statistics.home, totalPoints: 75, unspecifiedPoints: 75 } });
+  await advance();
+  expect(screen.getByText('75 poena')).toBeTruthy();
+  expect((screen.getByRole('combobox', { name: 'Set za pregled' }) as HTMLInputElement).value).toContain('Set 1');
+  const reads = vi.mocked(api.matchStatistics).mock.calls.length;
+  await advance(30000); expect(api.matchStatistics).toHaveBeenCalledTimes(reads);
+});
+
+test('final statistics supersede an in-flight live read and ignore its late response', async () => {
+  const view = render(wrap(<MatchStatisticsPanel match={match} revision="historical:26" disabled={false} automatic />));
+  await act(async () => fireEvent.click(screen.getByRole('button', { name: 'Prikaži statistiku' })));
+  let resolve!: (value: MatchStatistics) => void;
+  vi.mocked(api.matchStatistics).mockReturnValueOnce(new Promise(done => { resolve = done; }));
+  await advance();
+  const signal = vi.mocked(api.matchStatistics).mock.calls[1][2]!;
+  vi.mocked(api.matchStatistics).mockResolvedValue({ ...statistics, matchStatus: 'FINISHED',
+    home: { ...statistics.home, totalPoints: 75, unspecifiedPoints: 75 } });
+  await act(async () => view.rerender(wrap(<MatchStatisticsPanel match={{ ...match, status: 'FINISHED' }}
+    revision="historical:26" disabled={false} automatic />)));
+  expect(signal.aborted).toBe(true);
+  expect(screen.getByText('75 poena')).toBeTruthy();
+  await act(async () => resolve(statistics));
+  expect(screen.getByText('75 poena')).toBeTruthy();
+  expect(api.matchStatistics).toHaveBeenCalledTimes(3);
+});
+
+test('a failed final read hides old statistics and can be retried without restarting live polling', async () => {
+  const view = render(wrap(<MatchStatisticsPanel match={match} revision="historical:26" disabled={false} automatic />));
+  await act(async () => fireEvent.click(screen.getByRole('button', { name: 'Prikaži statistiku' })));
+  vi.mocked(api.matchStatistics).mockRejectedValueOnce(new ApiError('Konačna statistika nije dostupna.', 503));
+  await act(async () => view.rerender(wrap(<MatchStatisticsPanel match={{ ...match, status: 'FINISHED' }}
+    revision="historical:26" disabled={false} automatic />)));
+  expect(screen.getByText('Konačna statistika nije dostupna.')).toBeTruthy();
+  expect(screen.queryByRole('table', { name: 'Pregled timova' })).toBeNull();
+  await advance(30000); expect(api.matchStatistics).toHaveBeenCalledTimes(2);
+  vi.mocked(api.matchStatistics).mockResolvedValue({ ...statistics, matchStatus: 'FINISHED',
+    home: { ...statistics.home, totalPoints: 75, unspecifiedPoints: 75 } });
+  await act(async () => fireEvent.click(screen.getByRole('button', { name: 'Osveži statistiku' })));
+  expect(screen.getByText('75 poena')).toBeTruthy();
 });

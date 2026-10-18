@@ -170,7 +170,7 @@ export function MatchesPage({ canManage }: { canManage: boolean }) {
                 setInput((current) => ({ ...current, localDateTime: value }));
               }} />
           </Stack>
-          <Text size="sm" c="dimmed">Nova utakmica ima status „Zakazana“. Praćenje rezultata biće dodato kasnije.</Text>
+          <Text size="sm" c="dimmed">Posle čuvanja prijavite sastave i izaberite početne postave. Utakmica počinje tek nakon potvrde statističara.</Text>
           <Group justify="space-between" className="editor-actions">
             <Text size="xs" c="dimmed">Sva polja su obavezna.</Text>
             <Group className="editor-action-buttons">

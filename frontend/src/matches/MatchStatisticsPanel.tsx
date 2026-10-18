@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react';
 import { api, errorMessage, type Match, type MatchStatistics, type TeamStatistics } from '../api/client';
 import { useLiveRefresh } from './useLiveRefresh';
 import { LiveRefreshNotice } from './LiveRefreshNotice';
+import { CoachingRecommendations } from './CoachingRecommendations';
 
 const metrics: { key: keyof Pick<TeamStatistics, 'totalPoints' | 'attackPoints' | 'blockPoints' | 'serviceAces'
   | 'opponentErrors' | 'unspecifiedPoints' | 'errors' | 'unattributedErrors'>; label: string }[] = [
@@ -50,24 +51,26 @@ export function MatchStatisticsPanel({ match, revision, disabled, automatic = fa
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [attempt, setAttempt] = useState(0);
+  // A historical set's revision stays unchanged when the overall match ends.
+  const requestRevision = revision + ':' + match.status + ':' + attempt;
   useEffect(() => {
     if (!expanded || disabled) return;
     const controller = new AbortController();
     setLoading(true); setError('');
     api.matchStatistics(match.id, scope, controller.signal).then((result) => {
-      if (!controller.signal.aborted) { setData(result); setLoadedRevision(revision + ':' + attempt); }
+      if (!controller.signal.aborted) { setData(result); setLoadedRevision(requestRevision); }
     }).catch((failure) => { if (!controller.signal.aborted) setError(errorMessage(failure)); })
       .finally(() => { if (!controller.signal.aborted) setLoading(false); });
     return () => controller.abort();
-  }, [match.id, scope, expanded, revision, disabled, attempt]);
+  }, [match.id, scope, expanded, requestRevision, disabled]);
   const liveEnabled = automatic && expanded && !disabled && !loading && match.status === 'LIVE'
     && data?.matchStatus !== 'FINISHED' && (scope === null || data?.sets.find((set) => set.id === scope)?.status !== 'FINISHED');
-  const live = useLiveRefresh(liveEnabled, match.id + ':' + scope + ':' + revision + ':' + attempt, async (signal) => {
+  const live = useLiveRefresh(liveEnabled, match.id + ':' + scope + ':' + requestRevision, async (signal) => {
     const result = await api.matchStatistics(match.id, scope, signal);
     if (signal.aborted) return;
-    setData(result); setLoadedRevision(revision + ':' + attempt); setError('');
+    setData(result); setLoadedRevision(requestRevision); setError('');
   });
-  const current = data?.matchId === match.id && data.setId === scope && loadedRevision === revision + ':' + attempt ? data : null;
+  const current = data?.matchId === match.id && data.setId === scope && loadedRevision === requestRevision ? data : null;
   const scopeLabel = scope === null ? 'Cela utakmica' : 'Set ' + data?.sets.find((set) => set.id === scope)?.number;
   return <Paper component="section" withBorder p="lg" className="roster-team" aria-label="Statistika utakmice">
     <Stack gap="md">
@@ -113,6 +116,7 @@ export function MatchStatisticsPanel({ match, revision, disabled, automatic = fa
             <Alert color="blue">Računaju se samo važeći, neponišteni poeni. Poeni bez detalja ne pripisuju se igračima.
               Greške su samo zabeležene greške koje su donele poen protivniku, ne sve greške tokom igre.</Alert>
             <PlayerTable team={current.home} color="blue" /><PlayerTable team={current.away} color="teal" />
+            <CoachingRecommendations analysis={current.analysis} />
             <Text size="xs" c="dimmed">Prikazani su svi prijavljeni igrači, uključujući one sa nulama. Nula ne znači da igrač nije igrao.
               Osvojeni poeni igrača su zbir napada, blokova i asova; ne uključuju greške protivnika.
               Ne računamo procente uspešnosti jer ne beležimo sve pokušaje, prijeme i dodire lopte.</Text>

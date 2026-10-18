@@ -25,6 +25,7 @@ import rs.stefanoluic.volleyball.match.play.substitution.SetSubstitutionService;
 import rs.stefanoluic.volleyball.match.play.substitution.dto.SubstituteRequest;
 import rs.stefanoluic.volleyball.match.roster.*;
 import rs.stefanoluic.volleyball.match.statistics.dto.*;
+import rs.stefanoluic.volleyball.match.recommendation.dto.*;
 import rs.stefanoluic.volleyball.player.*;
 import rs.stefanoluic.volleyball.team.*;
 import rs.stefanoluic.volleyball.user.*;
@@ -166,6 +167,9 @@ class MatchStatisticsIntegrationTest {
         assertThat(total.sets()).extracting(StatisticsSet::number).containsExactly(1,2);
         assertThat(total.sets()).extracting(StatisticsSet::scoreVersion).containsExactly(26,1);
         assertThat(total.home().totalPoints()).isEqualTo(firstStats.home().totalPoints()+second.home().totalPoints());
+        assertThat(total.analysis().availability()).isEqualTo(AnalysisAvailability.AVAILABLE);
+        assertThat(firstStats.analysis().availability()).isEqualTo(AnalysisAvailability.AVAILABLE);
+        assertThat(second.analysis().availability()).isEqualTo(AnalysisAvailability.INSUFFICIENT_DATA);
         assertTotals(total.home()); assertTotals(total.away());
     }
     @Test void threeSetFinishedMatchKeepsReadableTotalsWithoutInventingRates() throws Exception {
@@ -181,6 +185,68 @@ class MatchStatisticsIntegrationTest {
         assertThat(result.home().totalPoints()).isEqualTo(75); assertThat(player(result.home(),hp.get(2)).scoringPoints()).isEqualTo(75);
         mvc.perform(get(path()).session(login(UserRole.COACH,UserStatus.ACTIVE))).andExpect(status().isOk())
                 .andExpect(jsonPath("$.home.totalPoints").value(75)).andExpect(jsonPath("$.home.attackSuccessRate").doesNotExist());
+    }
+    @Test void fiveSetJourneyKeepsCourtCorrectionsFinalStatisticsAndCoachReadConsistent() throws Exception {
+        UUID firstSet=setId;
+        var changed=substitutions.add(match.getId(),setId,new SubstituteRequest(UUID.randomUUID(),0,hp.getFirst(),hp.get(6)));
+        var ace=new AddPointRequest(UUID.randomUUID(),changed.version(),home.getId(),PointActionType.SERVICE_ACE,hp.get(6));
+        var scored=scores.add(match.getId(),setId,ace);
+        assertThat(scores.add(match.getId(),setId,ace).version()).isEqualTo(scored.version());
+        var liberoIn=liberos.add(match.getId(),setId,new SubstituteRequest(UUID.randomUUID(),scored.version(),hp.get(4),hp.get(7)));
+        assertThat(liberoIn.libero().active()).hasSize(1);
+        var mistaken=point(home,PointActionType.ATTACK,hp.get(2));
+        scores.undo(match.getId(),setId,mistaken.lastActivePoint().id(),new UndoPointRequest(UUID.randomUUID(),mistaken.version()));
+        var corrected=point(home,PointActionType.ATTACK,hp.get(2));
+        var liberoOut=liberos.add(match.getId(),setId,new SubstituteRequest(UUID.randomUUID(),corrected.version(),hp.get(7),hp.get(4)));
+        assertThat(liberoOut.libero().active()).isEmpty();
+        assertThat(liberoOut.substitutions().homeUsed()).isEqualTo(1);
+        assertThat(liberoOut.court().server().id()).isEqualTo(hp.get(6));
+
+        MatchPreparationResponse finished=null;
+        for(int number=1;number<=5;number++) {
+            if(number<5) {
+                Team winner=number%2==1 ? home : away;
+                UUID scorer=winner==home ? hp.get(2) : ap.get(2);
+                int existing=number==1 ? 2 : 0;
+                for(int n=existing;n<25;n++) point(winner,PointActionType.ATTACK,scorer);
+            } else {
+                for(int n=0;n<14;n++) {
+                    point(home,PointActionType.ATTACK,hp.get(2));
+                    point(away,PointActionType.ATTACK,ap.get(2));
+                }
+                assertThat(point(home,PointActionType.ATTACK,hp.get(2)).canFinish()).isFalse();
+                assertThat(point(home,PointActionType.ATTACK,hp.get(2)).canFinish()).isTrue();
+            }
+            var state=scores.get(match.getId(),setId);
+            finished=play.finish(match.getId(),setId,new FinishSetRequest(UUID.randomUUID(),state.version()));
+            var set=finished.sets().getLast();
+            var perSet=statistics.get(match.getId(),setId);
+            assertThat(perSet.home().totalPoints()).isEqualTo(set.homeScore());
+            assertThat(perSet.away().totalPoints()).isEqualTo(set.awayScore());
+            assertTotals(perSet.home()); assertTotals(perSet.away());
+            if(number<5) setId=play.startNext(match.getId(),new StartNextSetRequest(number+1,setId,set.scoreVersion(),0,
+                    hp.subList(0,6),ap.subList(0,6),number%2==1 ? away.getId() : home.getId())).currentSet().id();
+        }
+        assertThat(finished.roster().match().status()).isEqualTo(MatchStatus.FINISHED);
+        assertThat(finished.homeSetsWon()).isEqualTo(3); assertThat(finished.awaySetsWon()).isEqualTo(2);
+        assertThat(finished.currentSet()).isNull(); assertThat(finished.nextSetNumber()).isNull();
+        var result=all(); assertThat(result.home().totalPoints()).isEqualTo(66); assertThat(result.away().totalPoints()).isEqualTo(64);
+        assertThat(player(result.home(),hp.get(6)).serviceAces()).isEqualTo(1);
+        assertThat(player(result.home(),hp.get(2)).attackPoints()).isEqualTo(65);
+        assertThat(player(result.away(),ap.get(2)).attackPoints()).isEqualTo(64);
+        assertThat(points.count()).isEqualTo(131); // 130 active rallies plus the cancelled entry; the retry adds no row.
+        assertThat(result.analysis().availability()).isEqualTo(AnalysisAvailability.AVAILABLE);
+        assertThat(result.analysis().totalRallies()).isEqualTo(130);
+        assertThat(result.analysis().teams()).allSatisfy(team -> assertThat(team.items())
+                .extracting(CoachingRecommendation::code).contains(RecommendationCode.CONCENTRATED_SCORING));
+        assertThat(statistics.get(match.getId(),firstSet).home().totalPoints()).isEqualTo(25);
+        var finalScore=scores.get(match.getId(),setId);
+        assertThat(finalScore.canRecord()).isFalse(); assertThat(finalScore.canUndo()).isFalse();
+        assertThatThrownBy(() -> point(home,PointActionType.ATTACK,hp.get(2))).isInstanceOf(ApiException.class);
+        mvc.perform(get(path()).session(login(UserRole.COACH,UserStatus.ACTIVE))).andExpect(status().isOk())
+                .andExpect(jsonPath("$.matchStatus").value("FINISHED"))
+                .andExpect(jsonPath("$.home.totalPoints").value(66)).andExpect(jsonPath("$.away.totalPoints").value(64))
+                .andExpect(jsonPath("$.analysis.totalRallies").value(130));
     }
     @Test void statisticsDoNotMixAnotherMatchEvenWhenTeamsAreTheSame() {
         point(home,PointActionType.ATTACK,hp.get(2));
@@ -245,5 +311,35 @@ class MatchStatisticsIntegrationTest {
         mvc.perform(get(path()).param("setId","wrong").session(session)).andExpect(status().isBadRequest());
         mvc.perform(get("/api/matches/"+UUID.randomUUID()+"/statistics").session(session)).andExpect(status().isNotFound());
         mvc.perform(get(path()).param("setId",setId.toString()).session(session)).andExpect(status().isOk()).andExpect(jsonPath("$.setId").value(setId.toString()));
+    }
+
+    @Test void recommendationsUseTheSameActivePointSnapshotAndDisappearWhenUndoDropsTheSample() throws Exception {
+        for(int n=0;n<10;n++) point(home,PointActionType.ATTACK,hp.get(2));
+        var result=all();
+        assertThat(result.analysis().totalRallies()).isEqualTo(10);
+        assertThat(result.analysis().teams().getFirst().items()).extracting(CoachingRecommendation::code).contains(RecommendationCode.CONCENTRATED_SCORING);
+        mvc.perform(get(path()).session(login(UserRole.COACH,UserStatus.ACTIVE))).andExpect(status().isOk())
+                .andExpect(jsonPath("$.analysis.availability").value("AVAILABLE"))
+                .andExpect(jsonPath("$.analysis.teams[0].items[0].participantId").value(hp.get(2).toString()));
+        var score=scores.get(match.getId(),setId);
+        scores.undo(match.getId(),setId,score.lastActivePoint().id(),new UndoPointRequest(UUID.randomUUID(),10));
+        var afterUndo=all(); assertThat(afterUndo.analysis().totalRallies()).isEqualTo(9);
+        assertThat(afterUndo.analysis().availability()).isEqualTo(AnalysisAvailability.INSUFFICIENT_DATA);
+        assertThat(afterUndo.analysis().teams()).allSatisfy(team -> assertThat(team.items()).isEmpty());
+    }
+    @Test void unspecifiedPointsBlockAdviceInsteadOfImplyingPlayerPerformance() {
+        for(int n=0;n<7;n++) point(home,PointActionType.ATTACK,hp.get(2));
+        for(int n=0;n<3;n++) point(home,PointActionType.UNSPECIFIED,null);
+        var result=all(); assertThat(result.home().totalPoints()).isEqualTo(10);
+        assertThat(result.analysis().availability()).isEqualTo(AnalysisAvailability.INCOMPLETE_DETAILS);
+        assertThat(result.analysis().unspecifiedRallies()).isEqualTo(3);
+        assertThat(result.analysis().teams()).allSatisfy(team -> assertThat(team.items()).isEmpty());
+    }
+    @Test void errorPatternIsAssignedToTheTeamThatMadeErrorsNotTheScoringOpponent() {
+        for(int n=0;n<5;n++) point(away,PointActionType.OPPONENT_ERROR,hp.get(2));
+        for(int n=0;n<5;n++) point(home,PointActionType.ATTACK,hp.get(2));
+        var result=all();
+        assertThat(result.analysis().teams().getFirst().items()).extracting(CoachingRecommendation::code).contains(RecommendationCode.RECORDED_ERRORS);
+        assertThat(result.analysis().teams().get(1).items()).extracting(CoachingRecommendation::code).doesNotContain(RecommendationCode.RECORDED_ERRORS);
     }
 }

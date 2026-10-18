@@ -8,9 +8,8 @@ management, team rosters, match scheduling, match participant selection and
 starting sets with saved initial lineups, point recording and undo, automatic
 service/rotation tracking, ordinary player substitutions, libero replacements,
 set completion, match completion, optional point classification/player attribution
-and team/player statistics by set or whole match, with automatic polling for coaching staff.
-Coaching recommendations and reporting
-are not implemented yet.
+and team/player statistics by set or whole match, with automatic polling and
+rule-based review suggestions for coaching staff. PDF reporting is not implemented.
 
 ## Stack
 
@@ -122,12 +121,19 @@ start, duplicate-start protection, point history, last-point undo, idempotent re
 concurrent score writes, substitutions/libero replacements and reverse-order corrections,
 point classification, pre-rally player eligibility and migration of existing score-only points,
 whole-match/set aggregates, cancelled-point exclusion, roster snapshots and statistics access,
+recommendation thresholds, data-coverage guards and removal after point corrections,
 server/rotation recovery after undo,
 deuce/tie-break rules, complete 3:0/3:2 match flows,
 set transitions and role-based access. Integration tests
 require Docker and use a separate temporary PostgreSQL container through
 Testcontainers. They do not modify the development database or its admin account.
 The first run may download the Testcontainers cleanup image.
+
+A [manual demonstration checklist in Serbian](docs/PROVERA_APLIKACIJE.md)
+covers accounts, match flow, two-browser following and final statistics. It is a
+checklist to execute, not a record of completed browser testing. The integration
+suite also exercises a complete 3:2 match with a 16:14 fifth set, substitutions,
+libero entry/return, a point correction, an idempotent retry and final aggregates.
 
 ## Stop
 
@@ -553,6 +559,42 @@ Omit setId for the whole match. A supplied set ID must belong to the match;
 missing/foreign sets return 404 and malformed UUIDs return 400. Scheduled matches
 are readable as zero totals, even without participants or sets.
 
+### Rule-based coaching review
+
+- The statistics response includes analysis, computed on the backend from the same
+  home/away aggregates in the same read snapshot. There is no separate recommendation
+  endpoint, database table, background job, AI model or external service.
+- Preporuke za pregled igre appears below player statistics and follows the selected
+  set/whole-match scope, refresh and coaching-staff polling. Both existing reader
+  roles can see it; no new write or account permissions are introduced.
+- At least 10 active points and at least 80% classified points across BOTH teams
+  are required. Fewer points yield INSUFFICIENT_DATA; more than 20% UNSPECIFIED
+  yield INCOMPLETE_DETAILS. In either case all review items are suppressed.
+  The response exposes total/unspecified counts and the minimum sample/coverage.
+- AVAILABLE means only that these input guards passed, not statistical confidence
+  or proof of good/bad play. The thresholds below are application heuristics,
+  not FIVB rules, validated benchmarks or universal coaching standards.
+- RECORDED_ERRORS: at least 5 recorded rally-ending errors and those errors account
+  for at least 30% of the opponent's points. This is assigned to the team that made
+  errors, not the team awarded those points. The suggestion is to review those
+  actions, not to infer an error rate across unknown attempts or blame an individual.
+- OPPONENT_ACES: the opponent has at least 3 service aces. The suggestion is to
+  review those serves/reception organization, without assigning a receiver or
+  inferring reception quality from data the application does not record.
+- CONCENTRATED_SCORING: the team has at least 8 individual scoring points and one
+  player has at least 5 and at least 60% of them. The denominator is attack + block
+  + ace points, not team total points, gifted opponent-error points or attempts.
+  Evidence uses the saved participant ID/name/jersey. It does not imply attack
+  efficiency, playing time, overuse or a need to substitute that player.
+- Each triggered item has a stable code, title, numeric observation, review
+  suggestion and optional participantId. Items are ordered as errors, opponent
+  aces and scoring concentration. When no rule triggers, the UI explicitly says
+  that absence of a pattern does not mean absence of problems.
+- Undo, retries and scope changes need no extra recommendation maintenance:
+  recomputation uses active points only. Completed sets/matches retain their
+  historical review. Loading/failure/superseded-read handling is shared with the
+  statistics view, so old suggestions are not shown under a newly selected scope.
+
 ## Automatic following for coaching staff
 
 - Coaching staff automatically read the open match overview and active set every
@@ -566,10 +608,13 @@ are readable as zero totals, even without participants or sets.
   historical set turns following off so background updates do not move the
   selection. Enable the checkbox to return to the active set. Finished set scores
   stop polling; whole-match statistics can continue while other sets are live.
+- Confirmed match completion triggers a final read of expanded statistics even
+  when a historical set remains selected; obsolete live responses are discarded.
+  A failed final read shows an error and can be retried with the refresh button.
 - Polling ends at confirmed match completion. Statisticians retain manual reads
   and refresh-after-write behavior; no background request overwrites their drafts
   or resolves uncertain mutation retries. Automatic requests are GET only.
-- Each resource has at most one active fetch. Hanging reads are aborted after
+- Each polling resource has at most one active fetch. Hanging automatic reads are aborted after
   12 seconds. Network/5xx/429 failures use delays of 6, 12, 24 and at most 30 seconds;
   a success restores the normal interval. Other 4xx responses stop automatic reads
   until an explicit manual refresh. Session expiry still uses the shared 401 handler.
