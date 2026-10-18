@@ -2,6 +2,8 @@ import { Alert, Badge, Button, Group, Paper, Select, SimpleGrid, Skeleton, Stack
 import { IconChartBar, IconRefresh } from '@tabler/icons-react';
 import { useEffect, useState } from 'react';
 import { api, errorMessage, type Match, type MatchStatistics, type TeamStatistics } from '../api/client';
+import { useLiveRefresh } from './useLiveRefresh';
+import { LiveRefreshNotice } from './LiveRefreshNotice';
 
 const metrics: { key: keyof Pick<TeamStatistics, 'totalPoints' | 'attackPoints' | 'blockPoints' | 'serviceAces'
   | 'opponentErrors' | 'unspecifiedPoints' | 'errors' | 'unattributedErrors'>; label: string }[] = [
@@ -38,7 +40,9 @@ function PlayerTable({ team, color }: { team: TeamStatistics; color: string }) {
   </Paper>;
 }
 
-export function MatchStatisticsPanel({ match, revision, disabled }: { match: Match; revision: string; disabled: boolean }) {
+export function MatchStatisticsPanel({ match, revision, disabled, automatic = false }: {
+  match: Match; revision: string; disabled: boolean; automatic?: boolean;
+}) {
   const [expanded, setExpanded] = useState(false);
   const [scope, setScope] = useState<string | null>(null);
   const [data, setData] = useState<MatchStatistics | null>(null);
@@ -56,6 +60,13 @@ export function MatchStatisticsPanel({ match, revision, disabled }: { match: Mat
       .finally(() => { if (!controller.signal.aborted) setLoading(false); });
     return () => controller.abort();
   }, [match.id, scope, expanded, revision, disabled, attempt]);
+  const liveEnabled = automatic && expanded && !disabled && !loading && match.status === 'LIVE'
+    && data?.matchStatus !== 'FINISHED' && (scope === null || data?.sets.find((set) => set.id === scope)?.status !== 'FINISHED');
+  const live = useLiveRefresh(liveEnabled, match.id + ':' + scope + ':' + revision + ':' + attempt, async (signal) => {
+    const result = await api.matchStatistics(match.id, scope, signal);
+    if (signal.aborted) return;
+    setData(result); setLoadedRevision(revision + ':' + attempt); setError('');
+  });
   const current = data?.matchId === match.id && data.setId === scope && loadedRevision === revision + ':' + attempt ? data : null;
   const scopeLabel = scope === null ? 'Cela utakmica' : 'Set ' + data?.sets.find((set) => set.id === scope)?.number;
   return <Paper component="section" withBorder p="lg" className="roster-team" aria-label="Statistika utakmice">
@@ -75,7 +86,8 @@ export function MatchStatisticsPanel({ match, revision, disabled }: { match: Mat
           <Button variant="light" disabled={disabled || loading} leftSection={<IconRefresh size={16} />}
             onClick={() => setAttempt((value) => value + 1)}>Osveži statistiku</Button>
         </Group>
-        <Text size="xs" c="dimmed">Promene na drugom uređaju još se ne prikazuju automatski. Za najnovije podatke osvežite statistiku.</Text>
+        {liveEnabled ? <LiveRefreshNotice state={live} label="statistika" />
+          : <Text size="xs" c="dimmed">Završeni setovi ostaju za pregled. Za najnovije podatke možete ručno osvežiti statistiku.</Text>}
         {disabled ? <Alert color="blue">Statistika trenutno nije dostupna dok je unos otvoren, zahtev u toku ili rezultat nije potvrđen. Završite ili otkažite unos i po potrebi osvežite rezultat.</Alert>
           : loading || (!error && !current) ? <Stack role="status" aria-label="Učitavanje statistike"><Skeleton height={95} /><Skeleton height={200} /></Stack>
           : error ? <Alert color="red" role="alert">{error}</Alert>

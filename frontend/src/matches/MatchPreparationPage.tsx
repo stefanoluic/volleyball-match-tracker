@@ -1,13 +1,15 @@
-import { Alert, Badge, Button, Group, Paper, Select, SimpleGrid, Skeleton, Stack, Text, Title } from '@mantine/core';
+import { Alert, Badge, Button, Checkbox, Group, Paper, Select, SimpleGrid, Skeleton, Stack, Text, Title } from '@mantine/core';
 import { notifications } from '@mantine/notifications';
 import { IconArrowLeft, IconPlayerPlay, IconRefresh, IconBallVolleyball } from '@tabler/icons-react';
-import { useEffect, useState, type FormEvent } from 'react';
+import { useEffect, useRef, useState, type FormEvent } from 'react';
 import { api, errorMessage, type LineupPlayer, type MatchPreparation, type StartMatchInput, type TeamRoster } from '../api/client';
 import { EditorPage } from '../components/EditorPage';
 import { positionLabels } from '../players/validation';
 import { formatMatchTime, matchStatusLabels } from './validation';
 import { hasStartDraft, initialStartInput, rotationLabels, validateStartInput } from './lineup';
 import { MatchScoreboard } from './MatchScoreboard';
+import { useLiveRefresh } from './useLiveRefresh';
+import { LiveRefreshNotice } from './LiveRefreshNotice';
 
 function TeamLineup({ team, ids, disabled, error, onChange }: {
   team: TeamRoster; ids: string[]; disabled: boolean; error?: string; onChange: (ids: string[]) => void;
@@ -65,18 +67,30 @@ export function MatchPreparationPage({ matchId, canManage, onBack }: {
   const [selectedSetId, setSelectedSetId] = useState<string | null>(null);
   const [confirming, setConfirming] = useState(false);
   const [navigation, setNavigation] = useState<'back' | 'reload' | 'overview' | null>(null);
+  const [followActive, setFollowActive] = useState(true);
+  const following = useRef(true);
   useEffect(() => {
     const controller = new AbortController();
     setLoading(true); setLoadError(''); setStartError(''); setFields({}); setConfirming(false);
     api.matchPreparation(matchId, controller.signal).then((result) => {
       if (!controller.signal.aborted) {
         setData(result); setInput(initialStartInput(result)); setPreparingNext(false);
-        setSelectedSetId(result.currentSet?.id ?? result.sets.at(-1)?.id ?? null);
+        setSelectedSetId((selected) => !canManage && !following.current && result.sets.some((entry) => entry.id === selected)
+          ? selected : result.currentSet?.id ?? result.sets.at(-1)?.id ?? null);
       }
     }).catch((failure) => { if (!controller.signal.aborted) setLoadError(errorMessage(failure)); })
       .finally(() => { if (!controller.signal.aborted) setLoading(false); });
     return () => controller.abort();
   }, [matchId, attempt]);
+
+  const liveEnabled = !canManage && !loading && data?.roster.match.status !== 'FINISHED';
+  const live = useLiveRefresh(liveEnabled, matchId + ':' + attempt, async (signal) => {
+    const result = await api.matchPreparation(matchId, signal);
+    if (signal.aborted) return;
+    setData(result); setInput(initialStartInput(result)); setLoadError('');
+    setSelectedSetId((selected) => !following.current && result.sets.some((entry) => entry.id === selected)
+      ? selected : result.currentSet?.id ?? result.sets.at(-1)?.id ?? null);
+  });
 
   const editable = !!data && canManage && ((data.roster.match.status === 'SCHEDULED' && !data.firstSet)
     || (preparingNext && data.roster.match.status === 'LIVE' && !!data.nextSetNumber));
@@ -117,6 +131,7 @@ export function MatchPreparationPage({ matchId, canManage, onBack }: {
   if (loading || loadError || !data || !input) return <Stack gap="lg">
     <Button variant="subtle" w="fit-content" leftSection={<IconArrowLeft size={17} />} onClick={onBack}>Nazad na utakmice</Button>
     <Title order={1} size="h2">Početne postave</Title>
+    {liveEnabled && <LiveRefreshNotice state={live} label="utakmica" />}
     {loading ? <Stack role="status" aria-label="Učitavanje postava"><Skeleton height={130} /><Skeleton height={280} /></Stack>
       : <Alert color="red" role="alert">{loadError || 'Podaci nisu dostupni.'}
         <Button variant="light" mt="sm" onClick={() => setAttempt((value) => value + 1)}>Pokušaj ponovo</Button>
@@ -137,6 +152,7 @@ export function MatchPreparationPage({ matchId, canManage, onBack }: {
     icon={<IconBallVolleyball size={28} aria-hidden="true" />} busy={busy || scoringBusy}
     breadcrumbs={[{ label: 'Utakmice', onClick: () => navigate('back') }]}>
     <Stack gap="xl">
+      {liveEnabled && <LiveRefreshNotice state={live} label="utakmica" />}
       <Group justify="space-between">
         <Text size="sm" c="dimmed">{nextNumber ? 'Priprema seta ' + nextNumber : firstSet ? 'Rezultat u setovima i pregled igre' : 'Prvi set · početna šestorka i redosled rotacije'}</Text>
         <Button variant="light" size="xs" disabled={busy || scoringBusy} leftSection={<IconRefresh size={15} />}
@@ -172,10 +188,19 @@ export function MatchPreparationPage({ matchId, canManage, onBack }: {
             {!canManage && data.nextSetNumber && <Text size="sm" c="dimmed">Čeka se da statističar pokrene set {data.nextSetNumber}.</Text>}
           </Stack>
         </Paper>
+        {!canManage && match.status !== 'FINISHED' && <Checkbox label="Prati aktuelni set" checked={followActive}
+          description="Isključite za pregled starijeg seta bez automatskog prebacivanja."
+          onChange={(event) => {
+            const checked = event.currentTarget.checked; following.current = checked; setFollowActive(checked);
+            if (checked) setSelectedSetId(data.currentSet?.id ?? data.sets.at(-1)?.id ?? null);
+          }} />}
         <Select label="Set za pregled" disabled={scoringBusy} value={selectedSet?.id ?? null}
           data={data.sets.map((entry) => ({ value: entry.id, label: 'Set ' + entry.number + ' · '
             + (entry.status === 'LIVE' ? 'U toku' : entry.homeScore + ':' + entry.awayScore + ' · Završen') }))}
-          onChange={(id) => setSelectedSetId(id)} />
+          onChange={(id) => {
+            setSelectedSetId(id);
+            if (!canManage) { const follow = id === (data.currentSet?.id ?? data.sets.at(-1)?.id); following.current = follow; setFollowActive(follow); }
+          }} />
         {selectedSet && <>
         <MatchScoreboard key={selectedSet.id + ':' + selectedSet.status} match={match} set={selectedSet}
           canManage={canManage} onBusyChange={setScoringBusy} onSetFinished={(result) => {

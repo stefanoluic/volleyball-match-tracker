@@ -9,6 +9,8 @@ import { LiberoReplacements, type LiberoCommand } from './LiberoReplacements';
 import { PointDetailsForm, type AddPointCommand } from './PointDetailsForm';
 import { pointActionLabels, pointPlayerLabel } from './pointDetails';
 import { MatchStatisticsPanel } from './MatchStatisticsPanel';
+import { useLiveRefresh } from './useLiveRefresh';
+import { LiveRefreshNotice } from './LiveRefreshNotice';
 
 type Command = AddPointCommand
   | { kind: 'undo'; requestId: string; version: number; pointId: string }
@@ -50,6 +52,14 @@ export function MatchScoreboard({ match, set, canManage, onBusyChange, onSetFini
       .finally(() => { if (!controller.signal.aborted) setLoading(false); });
     return () => controller.abort();
   }, [match.id, set.id, attempt]);
+
+  const liveEnabled = !canManage && !loading && match.status === 'LIVE' && (score?.setStatus ?? set.status) === 'LIVE';
+  const live = useLiveRefresh(liveEnabled, match.id + ':' + set.id + ':' + attempt, async (signal) => {
+    const result = await api.setScore(match.id, set.id, signal);
+    if (signal.aborted) return;
+    setScore((previous) => previous && previous.version > result.version ? previous : result);
+    setLoadError('');
+  });
 
   const teamName = (teamId: string) => teamId === match.homeTeam.id ? match.homeTeam.name : match.awayTeam.name;
   function refresh() {
@@ -132,6 +142,7 @@ export function MatchScoreboard({ match, set, canManage, onBusyChange, onSetFini
             {match.homeTeam.name} {score.homeScore} : {score.awayScore} {match.awayTeam.name}
           </Text>}
         <Text size="sm">Prvi servis: {teamName(set.firstServingTeamId)}</Text>
+        {liveEnabled && <LiveRefreshNotice state={live} label="rezultat seta" />}
         {loadError && <Alert color="red" role="alert">{loadError}</Alert>}
         {writeError && <Alert color="red" role="alert">{writeError}
           <Text size="sm" mt="xs">{pending
@@ -180,7 +191,7 @@ export function MatchScoreboard({ match, set, canManage, onBusyChange, onSetFini
           </Stack>}
         </Alert>}
         {score && !editable && <Text size="sm" c="dimmed">{canManage
-          ? 'Unos nije dostupan jer utakmica ili set nisu u toku.' : 'Pristup za pregled. Rezultat osvežavate ručno.'}</Text>}
+          ? 'Unos nije dostupan jer utakmica ili set nisu u toku.' : 'Pristup za pregled. Aktivnu utakmicu pratite automatski; ručno osvežavanje je takođe dostupno.'}</Text>}
         <Text size="xs" c="dimmed">Servis i rotacija prate važeće poene; kraj seta potvrđuje statističar. Detalji opisuju samo završnu akciju, ne sve dodire lopte.</Text>
       </Stack>
     </Paper>
@@ -189,7 +200,7 @@ export function MatchScoreboard({ match, set, canManage, onBusyChange, onSetFini
       busy={busy} onCommand={(command) => void execute(command)} onEditingChange={setLiberoEditing} />}
     {score && <SetSubstitutions match={match} score={score} canManage={canManage} disabled={unavailable || liberoEditing || pointEditing}
       busy={busy} onCommand={(command) => void execute(command)} onEditingChange={setSubstitutionEditing} />}
-    {score && <MatchStatisticsPanel match={match} revision={score.setId + ':' + score.version + ':' + score.setStatus}
+    {score && <MatchStatisticsPanel match={match} automatic={!canManage} revision={score.setId + ':' + score.version + ':' + score.setStatus}
       disabled={busy || loading || !!loadError || !!writeError || !!pending || substitutionEditing || liberoEditing || pointEditing} />}
     <Paper component="section" aria-label="Poslednji poeni" withBorder p="lg" className="roster-team">
       <Stack gap="md">

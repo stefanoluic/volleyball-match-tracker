@@ -8,8 +8,8 @@ management, team rosters, match scheduling, match participant selection and
 starting sets with saved initial lineups, point recording and undo, automatic
 service/rotation tracking, ordinary player substitutions, libero replacements,
 set completion, match completion, optional point classification/player attribution
-and team/player statistics by set or whole match.
-Automatic live updates, coaching recommendations and reporting
+and team/player statistics by set or whole match, with automatic polling for coaching staff.
+Coaching recommendations and reporting
 are not implemented yet.
 
 ## Stack
@@ -455,7 +455,8 @@ firstServingTeamId. The lineup arrays contain six match participant IDs
   identifier or automatically retry an uncertain write. Other failures require
   explicit score refresh before another entry.
 - Score/history reads use a repeatable-read snapshot. Osveži rezultat reloads
-  the current state; automatic polling/WebSocket updates are not implemented yet.
+  the current state; coaching staff also receive automatic updates through polling
+  as described below. WebSocket/SSE push is not implemented.
 - Once the set has a winning score, further additions are blocked while undo remains
   available. The statistician explicitly confirms completion; points alone do not
   automatically close the set or match.
@@ -537,7 +538,8 @@ read-only responses and remain safe even if the match/set was subsequently close
   percentages or team rankings are inferred from incomplete finishing-action data.
 - The frontend fetches only when expanded. Local score additions/undo and other
   score-version changes refresh the open statistics section. For changes on
-  another device, use Osveži statistiku; polling/WebSocket updates are still pending.
+  another device, coaching staff receive periodic updates; statisticians can use
+  Osveži statistiku. See automatic following below.
 - Loading, failed or superseded requests never leave old totals labelled as the
   new scope. Scope changes/unmount abort obsolete reads; refresh can recover from
   errors. Statistics are hidden/disabled during an open score/player-change draft,
@@ -550,6 +552,38 @@ read-only responses and remain safe even if the match/set was subsequently close
 Omit setId for the whole match. A supplied set ID must belong to the match;
 missing/foreign sets return 404 and malformed UUIDs return 400. Scheduled matches
 are readable as zero totals, even without participants or sets.
+
+## Automatic following for coaching staff
+
+- Coaching staff automatically read the open match overview and active set every
+  three seconds after the preceding request completes. An expanded statistics
+  section also polls while its selected scope can still change. This is polling
+  using existing authenticated GET endpoints, not WebSocket/SSE or instantaneous push.
+- New points/undo, rotation/service, ordinary/libero changes, set completion,
+  subsequent sets and match completion are picked up without a page reload.
+  A scheduled match's open preparation screen also detects match start.
+- Prati aktuelni set follows the active or latest set by default. Selecting a
+  historical set turns following off so background updates do not move the
+  selection. Enable the checkbox to return to the active set. Finished set scores
+  stop polling; whole-match statistics can continue while other sets are live.
+- Polling ends at confirmed match completion. Statisticians retain manual reads
+  and refresh-after-write behavior; no background request overwrites their drafts
+  or resolves uncertain mutation retries. Automatic requests are GET only.
+- Each resource has at most one active fetch. Hanging reads are aborted after
+  12 seconds. Network/5xx/429 failures use delays of 6, 12, 24 and at most 30 seconds;
+  a success restores the normal interval. Other 4xx responses stop automatic reads
+  until an explicit manual refresh. Session expiry still uses the shared 401 handler.
+- Hidden tabs and offline browsers pause polling and abort pending automatic
+  reads. Visibility/connection restoration performs an immediate read. Changing
+  the selected resource, manual refresh, closing statistics or leaving the screen
+  also cancels obsolete automatic reads, whose late results are ignored.
+- A status message identifies polling, pause, failed/retrying or stopped state,
+  with the last successful automatic check time. Failed background reads retain
+  the last snapshot but explicitly mark it as potentially stale. Initial failures
+  can recover automatically. Existing manual refresh buttons remain available.
+- Match overview, score and statistics are independent read snapshots and can
+  differ briefly during their refresh cycles; there is no claim of one atomic
+  snapshot across all panels. A future push design could reduce latency and traffic.
 
 ## Set completion and subsequent sets
 
@@ -621,7 +655,8 @@ scoreVersion, finishedAt and the winnerTeamId of a confirmed completed set.
   Sets with missing lineups or scores inconsistent with their point history return
   court=null rather than inventing a server. The UI explains unavailable state and
   hides potentially stale court data after a failed write until retry/refresh.
-  Coaches have the same read-only view, refreshed manually.
+  Coaches have the same read-only view, refreshed automatically for an active set,
+  with manual refresh still available for historical review.
 
 ## Ordinary substitutions
 
