@@ -129,6 +129,22 @@ require Docker and use a separate temporary PostgreSQL container through
 Testcontainers. They do not modify the development database or its admin account.
 The first run may download the Testcontainers cleanup image.
 
+### Continuous integration
+
+`.github/workflows/ci.yml` defines three independent checks on pushes, pull
+requests and manual dispatch: backend `mvn verify` on Linux with temporary
+Testcontainers databases; frontend clean install, type checks, tests and build;
+and isolated launcher safety tests on Windows. No development `.env`, database
+volume or account credentials are used. The workflow does not deploy the app.
+It takes effect after the repository is pushed to GitHub and Actions is enabled;
+adding the file locally does not confirm a successful hosted run.
+
+Official [checkout](https://github.com/actions/checkout/releases/tag/v7.0.1),
+[setup-java](https://github.com/actions/setup-java/releases/tag/v6.1.0) and
+[setup-node](https://github.com/actions/setup-node/releases/tag/v7.1.0) actions are
+pinned to full commit identifiers. The workflow grants read-only repository
+permissions and checkout does not persist its authentication credentials.
+
 A [manual demonstration checklist in Serbian](docs/PROVERA_APLIKACIJE.md)
 covers accounts, match flow, two-browser following and final statistics. It is a
 checklist to execute, not a record of completed browser testing. The integration
@@ -228,6 +244,8 @@ separate totals table.
 - Login rotates the session identifier. Logout invalidates the server session
   and removes its cookie. Sessions are held in backend memory and expire after
   30 minutes of inactivity; restarting the backend clears them.
+  Automatic authenticated reads count as activity; a visible polling page can
+  keep the session alive. Human-input inactivity detection is not implemented.
 - Session cookies are HttpOnly and SameSite=Lax. Local HTTP uses non-Secure cookies;
   for HTTPS deployment set `SERVER_SERVLET_SESSION_COOKIE_SECURE=true`.
 - CSRF protection is enabled for registration, login, logout, admin, team, player and match changes.
@@ -235,6 +253,30 @@ separate totals table.
   header. No JWTs, localStorage credentials or permissive CORS are used.
 - Password hashes are never included in API responses. Login failures use a
   generic message for invalid credentials and unapproved/blocked accounts.
+- The signed-in UI checks its session every 30 seconds after the preceding check
+  completes. Checks never overlap, pause in hidden/offline tabs, and resume when
+  the tab becomes visible and online. Temporary failures keep the current screen
+  with a warning, retry after 60 then at most 120 seconds, and clear that warning
+  on success. Other 4xx failures stop checks until the retry button is used.
+- A different account or role detected in another tab replaces the displayed
+  account and remounts its screens, clearing previous drafts/cached UI. Server-side
+  permissions remain authoritative on every request. Logout cancels pending
+  session checks so their late responses cannot restore the previous user.
+
+### Read deadlines and cancellation
+
+All API GET requests, including initial/manual loads and CSRF-token reads, have a
+12-second deadline covering headers and response-body parsing. A stalled read
+aborts its fetch and shows an error instead of leaving an indefinite loader.
+Caller cancellation also aborts the request. Superseded or timed-out responses
+cannot dispatch a late session-expired event. Startup session failures offer retry.
+
+This is not an automatic retry of every request: manual reads retain their retry
+buttons, while live following and session checks use their bounded polling rules.
+POST/PUT/DELETE requests are not timed out or silently replayed by this helper.
+A failed CSRF-token read prevents the mutation from being sent. Once a mutation
+is sent, existing explicit retries and score command identifiers remain in use;
+the client does not assume an uncertain write was rolled back.
 
 ### Endpoints
 

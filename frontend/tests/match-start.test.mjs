@@ -49,7 +49,7 @@ test('GET preparation uses session credentials and supports abort', async () => 
   const [path, options] = fetch.mock.calls[0].arguments;
   assert.equal(path, '/api/matches/match/preparation');
   assert.equal(options.credentials, 'same-origin');
-  assert.equal(options.signal, controller.signal);
+  assert.ok(options.signal instanceof AbortSignal);
 });
 test('POST start obtains fresh CSRF and submits version, ordered entries and serving team', async () => {
   const requests = [];

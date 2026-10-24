@@ -38,6 +38,6 @@ test('team list uses pagination and supports cancelling stale requests', async (
   });
   await api.teams(2, controller.signal);
   assert.equal(request.path, '/api/teams?page=2&size=20');
-  assert.equal(request.options.signal, controller.signal);
+  assert.ok(request.options.signal instanceof AbortSignal);
   assert.equal(request.options.credentials, 'same-origin');
 });

@@ -35,14 +35,14 @@ test('match list and single match support cancelling requests', async () => {
   await api.match('match-id', controller.signal);
   assert.equal(requests[0].path, '/api/matches?page=2&size=20');
   assert.equal(requests[1].path, '/api/matches/match-id');
-  assert.equal(requests[0].options.signal, controller.signal);
+  assert.ok(requests[0].options.signal instanceof AbortSignal);
 });
 test('team selection loads all pages, not just the first twenty teams', async () => {
   const paths = [];
   const controller = new AbortController();
   mock.method(globalThis, 'fetch', async (path, options) => {
     paths.push(path);
-    assert.equal(options.signal, controller.signal);
+    assert.ok(options.signal instanceof AbortSignal);
     return Response.json({ content: [{ id: String(paths.length) }], totalPages: 2 });
   });
   assert.deepEqual(await api.teamOptions(controller.signal), [{ id: '1' }, { id: '2' }]);

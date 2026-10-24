@@ -5,6 +5,7 @@ import { lazy, Suspense, useEffect, useState } from 'react';
 import { api, ApiError, errorMessage, roleLabels, type User } from './api/client';
 import { AuthPage } from './auth/AuthPage';
 import { Brand } from './components/Brand';
+import { usePolling } from './hooks/usePolling';
 
 const AdminUsersPage = lazy(() => import('./admin/AdminUsersPage').then(({ AdminUsersPage }) => ({ default: AdminUsersPage })));
 const TeamsPage = lazy(() => import('./teams/TeamsPage').then(({ TeamsPage }) => ({ default: TeamsPage })));
@@ -18,18 +19,19 @@ export function App() {
   const [notice, setNotice] = useState('');
   const [logoutBusy, setLogoutBusy] = useState(false);
   const [error, setError] = useState('');
+  const [sessionAttempt, setSessionAttempt] = useState(0);
 
   useEffect(() => {
-    let cancelled = false;
+    const controller = new AbortController();
     setLoading(true);
     setStartupError('');
-    api.me(false).then((current) => { if (!cancelled) setUser(current); })
+    api.me(false, controller.signal).then((current) => { if (!controller.signal.aborted) setUser(current); })
       .catch((failure) => {
-        if (cancelled) return;
+        if (controller.signal.aborted) return;
         if (failure instanceof ApiError && failure.status === 401) setUser(null);
         else setStartupError(errorMessage(failure));
-      }).finally(() => { if (!cancelled) setLoading(false); });
-    return () => { cancelled = true; };
+      }).finally(() => { if (!controller.signal.aborted) setLoading(false); });
+    return () => controller.abort();
   }, [attempt]);
 
   useEffect(() => {
@@ -42,15 +44,16 @@ export function App() {
     return () => window.removeEventListener('session-expired', expire);
   }, []);
 
-  useEffect(() => {
-    if (!user) return;
-    const timer = window.setInterval(() => {
-      void api.me().catch((failure) => {
-        if (!(failure instanceof ApiError && failure.status === 401)) setError(errorMessage(failure));
-      });
-    }, 30_000);
-    return () => window.clearInterval(timer);
-  }, [user?.id]);
+  const session = usePolling(!!user && !logoutBusy, (user?.id ?? '') + ':' + user?.role + ':' + sessionAttempt,
+    async (signal) => {
+      const current = await api.me(true, signal);
+      if (signal.aborted) return;
+      if (current.id !== user?.id || current.role !== user?.role) {
+        notifications.clean();
+        setError('');
+        setUser(current);
+      }
+    }, { intervalMs: 30_000, maxRetryDelayMs: 120_000, immediate: sessionAttempt > 0 });
 
   async function logout() {
     setLogoutBusy(true);
@@ -73,7 +76,7 @@ export function App() {
       <Button onClick={() => setAttempt((value) => value + 1)}>Pokušaj ponovo</Button></Stack></Container>
   );
   if (!user) return <AuthPage notice={notice} onClearNotice={() => setNotice('')}
-    onLogin={(current) => { setUser(current); setNotice(''); setError(''); }} />;
+    onLogin={(current) => { setUser(current); setNotice(''); setError(''); setSessionAttempt(0); }} />;
 
   return (
     <div className="dashboard">
@@ -90,9 +93,13 @@ export function App() {
       <Container component="main" size="lg" py="xl">
         <Stack gap="lg">
           {error && <Alert color="red" icon={<IconAlertCircle size={19} />} role="alert" withCloseButton onClose={() => setError('')}>{error}</Alert>}
+          {session.error && <Alert color="yellow" role="status" title="Provera sesije nije uspela">
+            {session.error} Pristup nalogu trenutno nije ponovo potvrđen.
+            <Button variant="light" size="xs" mt="sm" onClick={() => setSessionAttempt((value) => value + 1)}>Ponovi proveru sesije</Button>
+          </Alert>}
           <Suspense fallback={<Center py="xl"><Loader aria-label="Učitavanje stranice" /></Center>}>
-            {user.role === 'ADMIN' ? <AdminUsersPage /> : (
-              <Tabs defaultValue="teams" keepMounted>
+            {user.role === 'ADMIN' ? <AdminUsersPage key={user.id} /> : (
+              <Tabs key={user.id + ':' + user.role} defaultValue="teams" keepMounted>
                 <Tabs.List mb="xl" aria-label="Sekcije aplikacije" className="dashboard-navigation">
                   <Tabs.Tab value="teams" leftSection={<IconBallVolleyball size={18} aria-hidden="true" />}>Timovi i igrači</Tabs.Tab>
                   <Tabs.Tab value="matches" leftSection={<IconCalendarEvent size={18} aria-hidden="true" />}>Utakmice</Tabs.Tab>

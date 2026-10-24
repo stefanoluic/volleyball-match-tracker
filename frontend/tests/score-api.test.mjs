@@ -10,7 +10,7 @@ test('score read is match/set scoped, session-based and cancellable', async () =
   const [path, options] = fetch.mock.calls[0].arguments;
   assert.equal(path, '/api/matches/match/sets/set/score');
   assert.equal(options.credentials, 'same-origin');
-  assert.equal(options.signal, controller.signal);
+  assert.ok(options.signal instanceof AbortSignal);
 });
 for (const kind of ['add', 'undo']) {
   test(kind + ' point sends version and unchanged command ID with fresh CSRF', async () => {

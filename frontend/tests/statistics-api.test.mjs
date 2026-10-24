@@ -12,7 +12,7 @@ for (const setId of [null, 'set-id']) {
     const [path, options] = fetch.mock.calls[0].arguments;
     assert.equal(path, '/api/matches/match/statistics' + (setId ? '?setId=set-id' : ''));
     assert.equal(options.credentials, 'same-origin');
-    assert.equal(options.signal, controller.signal);
+    assert.ok(options.signal instanceof AbortSignal);
     assert.equal(options.method, undefined);
     assert.equal(fetch.mock.callCount(), 1); // No CSRF request or mutation for a read.
   });

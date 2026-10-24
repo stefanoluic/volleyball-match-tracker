@@ -330,9 +330,13 @@ export class ApiError extends Error {
   }
 }
 
-async function readResponse<T>(response: Response, path: string, notifyOnUnauthorized = true): Promise<T> {
+export const READ_TIMEOUT_MS = 12_000;
+
+async function readResponse<T>(response: Response, path: string, notifyOnUnauthorized = true, signal?: AbortSignal): Promise<T> {
+  signal?.throwIfAborted();
   if (!response.ok) {
     const body = await response.json().catch(() => ({}));
+    signal?.throwIfAborted();
     if (notifyOnUnauthorized && response.status === 401 && path !== '/api/auth/login') {
       window.dispatchEvent(new Event('session-expired'));
     }
@@ -342,7 +346,34 @@ async function readResponse<T>(response: Response, path: string, notifyOnUnautho
 }
 
 async function get<T>(path: string, signal?: AbortSignal, notifyOnUnauthorized = true): Promise<T> {
-  return readResponse<T>(await fetch(path, { credentials: 'same-origin', signal }), path, notifyOnUnauthorized);
+  signal?.throwIfAborted();
+  const controller = new AbortController();
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  let cancel: (() => void) | undefined;
+  const interrupted = new Promise<never>((_resolve, reject) => {
+    cancel = () => {
+      reject(signal?.reason ?? new DOMException('Read cancelled', 'AbortError'));
+      controller.abort(signal?.reason);
+    };
+    signal?.addEventListener('abort', cancel, { once: true });
+    timer = setTimeout(() => {
+      const failure = new ApiError('Server nije odgovorio na vreme. Pokušajte ponovo.', 504);
+      reject(failure);
+      controller.abort(failure);
+    }, READ_TIMEOUT_MS);
+  });
+  try {
+    return await Promise.race([(async () => {
+      const response = await fetch(path, { credentials: 'same-origin', signal: controller.signal });
+      controller.signal.throwIfAborted();
+      const result = await readResponse<T>(response, path, notifyOnUnauthorized, controller.signal);
+      controller.signal.throwIfAborted();
+      return result;
+    })(), interrupted]);
+  } finally {
+    clearTimeout(timer);
+    if (cancel) signal?.removeEventListener('abort', cancel);
+  }
 }
 
 async function mutate<T>(method: 'POST' | 'PUT' | 'DELETE', path: string, body?: object | URLSearchParams): Promise<T> {
@@ -366,7 +397,7 @@ function post<T>(path: string, body?: object | URLSearchParams): Promise<T> {
 }
 
 export const api = {
-  me: (notifyOnUnauthorized = true) => get<User>('/api/auth/me', undefined, notifyOnUnauthorized),
+  me: (notifyOnUnauthorized = true, signal?: AbortSignal) => get<User>('/api/auth/me', signal, notifyOnUnauthorized),
   login: (email: string, password: string) =>
     post<User>('/api/auth/login', new URLSearchParams({ email: email.trim(), password })),
   register: (data: Registration) => post<User>('/api/auth/register', data),

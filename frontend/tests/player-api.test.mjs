@@ -35,7 +35,7 @@ test('roster is scoped to a team, paginated and cancellable', async () => {
   });
   await api.players('team-id', 2, controller.signal);
   assert.equal(request.path, '/api/teams/team-id/players?page=2&size=20');
-  assert.equal(request.options.signal, controller.signal);
+  assert.ok(request.options.signal instanceof AbortSignal);
 });
 test('single team read supports aborting stale navigation', async () => {
   const controller = new AbortController();
@@ -46,5 +46,5 @@ test('single team read supports aborting stale navigation', async () => {
   });
   await api.team('team-id', controller.signal);
   assert.equal(request.path, '/api/teams/team-id');
-  assert.equal(request.options.signal, controller.signal);
+  assert.ok(request.options.signal instanceof AbortSignal);
 });

@@ -63,7 +63,7 @@ test('roster GET supports abort and same-origin session credentials', async () =
   assert.deepEqual(await api.matchRoster('match-id', controller.signal), roster);
   const [path, options] = fetch.mock.calls[0].arguments;
   assert.equal(path, '/api/matches/match-id/roster');
-  assert.equal(options.signal, controller.signal);
+  assert.ok(options.signal instanceof AbortSignal);
   assert.equal(options.credentials, 'same-origin');
 });
 test('roster PUT sends version and both selections with fresh CSRF', async () => {
