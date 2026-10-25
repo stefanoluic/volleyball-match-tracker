@@ -1,9 +1,11 @@
 package rs.stefanoluic.volleyball.match;
 
+import jakarta.persistence.criteria.Predicate;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Sort;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
+import org.springframework.data.jpa.domain.Specification;
 import org.springframework.transaction.annotation.Transactional;
 import rs.stefanoluic.volleyball.common.exception.ApiException;
 import rs.stefanoluic.volleyball.match.dto.*;
@@ -12,6 +14,9 @@ import rs.stefanoluic.volleyball.team.Team;
 import rs.stefanoluic.volleyball.team.TeamRepository;
 
 import java.util.UUID;
+import java.util.ArrayList;
+import java.util.Locale;
+import java.time.Instant;
 
 @Service
 public class MatchService {
@@ -26,13 +31,34 @@ public class MatchService {
     }
 
     @Transactional(readOnly = true)
-    public MatchPageResponse list(int page, int size) {
+    public MatchPageResponse list(int page, int size, String query, MatchStatus status, Instant from, Instant until) {
         if (page < 0 || size < 1 || size > 100) {
             throw new ApiException(HttpStatus.BAD_REQUEST, "Neispravna stranica ili veličina stranice.");
         }
+        String text = Team.normalizeText(query == null ? "" : query);
+        if (text.length() > 100) {
+            throw new ApiException(HttpStatus.BAD_REQUEST, "Pretraga može imati najviše 100 znakova.");
+        }
+        if (from != null && until != null && !from.isBefore(until)) {
+            throw new ApiException(HttpStatus.BAD_REQUEST, "Početak perioda mora biti pre njegovog kraja.");
+        }
+        Specification<Match> filters = (root, criteriaQuery, builder) -> {
+            var predicates = new ArrayList<Predicate>();
+            if (!text.isEmpty()) {
+                // LIKE metacharacters are literal user text, not additional wildcard operators.
+                String escaped = text.toLowerCase(Locale.ROOT).replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_");
+                String pattern = "%" + escaped + "%";
+                predicates.add(builder.or(builder.like(builder.lower(root.get("homeTeam").get("name")), pattern, '\\'),
+                        builder.like(builder.lower(root.get("awayTeam").get("name")), pattern, '\\')));
+            }
+            if (status != null) predicates.add(builder.equal(root.get("status"), status));
+            if (from != null) predicates.add(builder.greaterThanOrEqualTo(root.<Instant>get("scheduledAt"), from));
+            if (until != null) predicates.add(builder.lessThan(root.<Instant>get("scheduledAt"), until));
+            return builder.and(predicates.toArray(Predicate[]::new));
+        };
         var pageable = PageRequest.of(page, size,
                 Sort.by(Sort.Order.desc("scheduledAt"), Sort.Order.asc("id")));
-        return MatchPageResponse.from(matches.findAll(pageable).map(MatchResponse::from));
+        return MatchPageResponse.from(matches.findAll(filters, pageable).map(MatchResponse::from));
     }
 
     @Transactional(readOnly = true)

@@ -3,14 +3,15 @@ import {
   Stack, Text, TextInput, ThemeIcon, Title,
 } from '@mantine/core';
 import { notifications } from '@mantine/notifications';
-import { IconAlertCircle, IconCalendarEvent, IconCheck, IconPencil, IconPlus, IconRefresh, IconTrash } from '@tabler/icons-react';
-import { useEffect, useState, type FormEvent } from 'react';
+import { IconAlertCircle, IconCalendarEvent, IconCheck, IconPencil, IconPlus, IconRefresh, IconSearch, IconTrash } from '@tabler/icons-react';
+import { useEffect, useMemo, useState, type FormEvent } from 'react';
 import { api, ApiError, errorMessage, type Match, type MatchPage, type Team } from '../api/client';
 import { EditorPage } from '../components/EditorPage';
 import { InlineDeleteConfirmation } from '../components/InlineDeleteConfirmation';
 import { formatMatchTime, matchStatusLabels, toLocalDateTime, toMatchInput, validateMatchInput, type MatchFormInput } from './validation';
 import { MatchRosterPage } from './MatchRosterPage';
 import { MatchPreparationPage } from './MatchPreparationPage';
+import { emptyMatchFilters, toMatchListFilters, validateMatchFilters, type MatchFilterInput } from './filters';
 
 type Editor = { type: 'create' } | { type: 'edit'; match: Match };
 const emptyInput: MatchFormInput = { homeTeamId: '', awayTeamId: '', localDateTime: '' };
@@ -35,6 +36,12 @@ export function MatchesPage({ canManage }: { canManage: boolean }) {
   const [deleting, setDeleting] = useState<Match | null>(null);
   const [deleteError, setDeleteError] = useState('');
   const [busy, setBusy] = useState<'save' | 'delete' | null>(null);
+  const [filterInput, setFilterInput] = useState<MatchFilterInput>({ ...emptyMatchFilters });
+  const [appliedFilters, setAppliedFilters] = useState<MatchFilterInput>({ ...emptyMatchFilters });
+  const [filterErrors, setFilterErrors] = useState<Record<string, string>>({});
+  const requestFilters = useMemo(() => toMatchListFilters(appliedFilters), [appliedFilters]);
+  const hasFilters = Object.keys(requestFilters).length > 0;
+  const filtersChanged = JSON.stringify(filterInput) !== JSON.stringify(appliedFilters);
   const timeZone = Intl.DateTimeFormat().resolvedOptions().timeZone;
 
   useEffect(() => {
@@ -42,7 +49,7 @@ export function MatchesPage({ canManage }: { canManage: boolean }) {
     setLoading(true);
     setError('');
     setResult(null);
-    api.matches(page, controller.signal).then((data) => {
+    api.matches(page, controller.signal, requestFilters).then((data) => {
       if (controller.signal.aborted) return;
       if (page > 0 && data.content.length === 0) setPage(Math.max(0, data.totalPages - 1));
       else setResult(data);
@@ -52,7 +59,7 @@ export function MatchesPage({ canManage }: { canManage: boolean }) {
       if (!controller.signal.aborted) setLoading(false);
     });
     return () => controller.abort();
-  }, [page, refresh]);
+  }, [page, refresh, requestFilters]);
 
   useEffect(() => {
     if (!editor) return;
@@ -82,6 +89,26 @@ export function MatchesPage({ canManage }: { canManage: boolean }) {
     setEditor(next);
   }
 
+  function applyFilters(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (busy || deleting) return;
+    const errors = validateMatchFilters(filterInput);
+    setFilterErrors(errors);
+    if (Object.keys(errors).length) return;
+    const normalized = { ...filterInput, q: filterInput.q.trim().normalize('NFC') };
+    setFilterInput(normalized);
+    setPage(0);
+    setAppliedFilters(normalized);
+  }
+
+  function clearFilters() {
+    if (busy || deleting) return;
+    setFilterInput({ ...emptyMatchFilters });
+    setAppliedFilters({ ...emptyMatchFilters });
+    setFilterErrors({});
+    setPage(0);
+  }
+
   async function save(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (!canManage || !editor || busy || optionsLoading || optionsError || options.length < 2) return;
@@ -98,7 +125,8 @@ export function MatchesPage({ canManage }: { canManage: boolean }) {
       else await api.updateMatch(editor.match.id, data);
       notifications.show({
         title: editor.type === 'create' ? 'Utakmica je dodata' : 'Utakmica je izmenjena',
-        message: 'Podaci su sačuvani.', color: 'teal', icon: <IconCheck size={18} />, role: 'status',
+        message: hasFilters ? 'Podaci su sačuvani. Lista i dalje koristi izabrane filtere.' : 'Podaci su sačuvani.',
+        color: 'teal', icon: <IconCheck size={18} />, role: 'status',
       });
       setEditor(null);
       setPage(0);
@@ -202,6 +230,37 @@ export function MatchesPage({ canManage }: { canManage: boolean }) {
         </Group>
       </Group>
       {!canManage && <Badge variant="light">Pristup za pregled</Badge>}
+      <Paper component="form" aria-label="Pretraga i filteri utakmica" withBorder p="lg" onSubmit={applyFilters} noValidate>
+        <Stack gap="md">
+          <Text fw={600}>Pronađite utakmicu</Text>
+          <TextInput label="Naziv tima" placeholder="Npr. Vojvodina" maxLength={100} value={filterInput.q}
+            leftSection={<IconSearch size={17} />} error={filterErrors.q} styles={inputStyles} disabled={locked || !!deleting}
+            description="Pretraga domaćeg ili gostujućeg tima, bez razlikovanja velikih i malih slova."
+            onChange={(event) => { const q = event.currentTarget.value; setFilterInput((current) => ({ ...current, q })); }} />
+          <SimpleGrid cols={{ base: 1, sm: 3 }}>
+            <Select label="Status utakmice" value={filterInput.status} allowDeselect={false} error={filterErrors.status}
+              disabled={locked || !!deleting} data={[{ value: 'ALL', label: 'Sve utakmice' },
+                { value: 'SCHEDULED', label: 'Zakazane' }, { value: 'LIVE', label: 'U toku' }, { value: 'FINISHED', label: 'Završene' }]}
+              onChange={(status) => {
+                if (status === 'ALL' || status === 'SCHEDULED' || status === 'LIVE' || status === 'FINISHED')
+                  setFilterInput((current) => ({ ...current, status }));
+              }} />
+            <TextInput label="Od datuma" type="date" value={filterInput.fromDate} error={filterErrors.fromDate}
+              disabled={locked || !!deleting} styles={inputStyles}
+              onChange={(event) => { const fromDate = event.currentTarget.value; setFilterInput((current) => ({ ...current, fromDate })); }} />
+            <TextInput label="Do datuma" type="date" value={filterInput.toDate} error={filterErrors.toDate}
+              disabled={locked || !!deleting} styles={inputStyles}
+              onChange={(event) => { const toDate = event.currentTarget.value; setFilterInput((current) => ({ ...current, toDate })); }} />
+          </SimpleGrid>
+          <Text size="xs" c="dimmed">Oba datuma su uključena u period, prema vremenskoj zoni {timeZone}. Možete zadati samo jedan datum.</Text>
+          <Group>
+            <Button type="submit" leftSection={<IconSearch size={16} />} disabled={locked || !!deleting}>Primeni filtere</Button>
+            <Button variant="default" onClick={clearFilters}
+              disabled={locked || !!deleting || (!hasFilters && !filtersChanged && !Object.keys(filterErrors).length)}>Poništi filtere</Button>
+          </Group>
+          {filtersChanged && <Text size="sm" c="dimmed" role="status">Filteri su izmenjeni. Prikaz koristi prethodni izbor dok ne pritisnete „Primeni filtere“.</Text>}
+        </Stack>
+      </Paper>
       <Text size="xs" c="dimmed">Najnoviji termini prvo · Vremenska zona: {timeZone}</Text>
       {error && <Alert color="red" icon={<IconAlertCircle size={18} />} role="alert">{error}</Alert>}
       <div aria-busy={loading}>
@@ -209,8 +268,9 @@ export function MatchesPage({ canManage }: { canManage: boolean }) {
           : result ? result.content.length === 0 ? (
             <Paper withBorder p="xl" radius="md" className="teams-empty"><Stack align="center" gap="sm">
               <ThemeIcon variant="light" size={54} radius="xl"><IconCalendarEvent size={28} /></ThemeIcon>
-              <Title order={2} size="h4">Još nema utakmica</Title>
-              <Text c="dimmed" ta="center">{canManage ? 'Dodajte prvu utakmicu između dva postojeća tima.' : 'Zakazane utakmice će biti prikazane ovde.'}</Text>
+              <Title order={2} size="h4">{hasFilters ? 'Nema utakmica za izabrane filtere' : 'Još nema utakmica'}</Title>
+              <Text c="dimmed" ta="center">{hasFilters ? 'Promenite naziv tima, status ili datume, ili poništite filtere.'
+                : canManage ? 'Dodajte prvu utakmicu između dva postojeća tima.' : 'Zakazane utakmice će biti prikazane ovde.'}</Text>
             </Stack></Paper>
           ) : (
             <SimpleGrid cols={{ base: 1, sm: 2 }}>
@@ -255,7 +315,7 @@ export function MatchesPage({ canManage }: { canManage: boolean }) {
           ) : <Button variant="light" onClick={() => setRefresh((value) => value + 1)}>Pokušaj ponovo</Button>}
       </div>
       {!loading && result && <Group justify="space-between">
-        <Text size="sm" c="dimmed">Ukupno utakmica: {result.totalElements}</Text>
+        <Text size="sm" c="dimmed">{hasFilters ? 'Pronađeno utakmica: ' : 'Ukupno utakmica: '}{result.totalElements}</Text>
         {result.totalPages > 1 && <Pagination total={result.totalPages} value={page + 1} size="sm" disabled={locked || !!deleting}
           onChange={(value) => setPage(value - 1)} />}
       </Group>}

@@ -164,13 +164,13 @@ test('deleting the last item on a later page falls back to the remaining page', 
   renderPage();
   await screen.findByRole('article');
   fireEvent.click(screen.getAllByRole('button').find((button) => button.textContent === '2')!);
-  await waitFor(() => expect(api.matches).toHaveBeenLastCalledWith(1, expect.any(AbortSignal)));
+  await waitFor(() => expect(api.matches).toHaveBeenLastCalledWith(1, expect.any(AbortSignal), {}));
   await screen.findByRole('article');
   fireEvent.click(screen.getByRole('button', { name: 'Obriši' }));
   vi.mocked(api.matches).mockImplementation(async (page) => page === 1
     ? { ...empty, page, totalPages: 1, totalElements: 20 } : { ...populated, totalElements: 20 });
   fireEvent.click(screen.getByRole('button', { name: 'Obriši utakmicu' }));
-  await waitFor(() => expect(api.matches).toHaveBeenLastCalledWith(0, expect.any(AbortSignal)));
+  await waitFor(() => expect(api.matches).toHaveBeenLastCalledWith(0, expect.any(AbortSignal), {}));
 });
 test('pending save disables cancellation and duplicate submits', async () => {
   let finish!: (value: Match) => void;

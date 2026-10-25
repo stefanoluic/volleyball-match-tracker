@@ -379,6 +379,14 @@ from application user accounts and have no login credentials.
   FINISHED fixtures.
 - The frontend's Utakmice tab shows a paginated list, newest scheduled time first.
   Forms use dedicated screens and deletion uses inline confirmation.
+- The list can be filtered by either team's name, match status and scheduled date
+  range. Primeni filtere applies the selection and returns to the first page;
+  Poništi filtere restores the full list. Pagination, refresh and returning from
+  a match keep the applied selection. Draft filter changes do not issue requests.
+- Date filters include both selected calendar days in the browser's time zone;
+  either end may be omitted. The client sends the start of the first day as
+  `from` and the start of the day after the last as `until`. These are calendar
+  boundaries, so daylight-saving days need not contain 24 hours.
 - Team selectors are searchable and load all team pages. At least two teams must
   exist; the same team is disabled in the opposite selector.
 - Date/time input and display use the browser's time zone, shown in the interface.
@@ -398,11 +406,20 @@ from application user accounts and have no login credentials.
 
 | Method | Path | Access |
 | --- | --- | --- |
-| GET | /api/matches | Active statistician or coach; optional page and size |
+| GET | /api/matches | Active statistician or coach; optional page, size, q, status, from and until |
 | GET | /api/matches/{id} | Active statistician or coach |
 | POST | /api/matches | Active statistician, CSRF required |
 | PUT | /api/matches/{id} | Active statistician, CSRF required; scheduled only |
 | DELETE | /api/matches/{id} | Active statistician, CSRF required; scheduled only |
+
+Match search runs in PostgreSQL before pagination, including the result count.
+`q` is trimmed, NFC-normalized and limited to 100 characters; it matches a
+case-insensitive substring of either team name, not its city. `%`, `_` and `\`
+are literal search characters. `status` accepts `SCHEDULED`, `LIVE` or `FINISHED`.
+`from` and `until` are ISO timestamps with an offset or UTC Z: `from` is inclusive
+and `until` exclusive. If both are supplied, `from` must precede `until`.
+Invalid filters return HTTP 400. Matches with the same scheduled time are ordered
+by ID to keep pagination stable.
 
 ## Match participants
 

@@ -48,6 +48,21 @@ istog pregledača dele prijavljenu sesiju. Ne stavljaj lozinke u snimke ekrana.
     i povratak nakon odjave. Za prekid mreže koristi offline režim alata
     pregledača: automatski prikaz treba da pauzira, pa nastavi po povratku veze.
 
+## Pretraga utakmica
+
+- U tabu Utakmice unesi deo naziva domaćeg ili gostujućeg tima i pritisni
+  „Primeni filtere”. Velika i mala slova ne treba da utiču na rezultat.
+- Kombinuj naziv, status i period datuma. Oba datuma ulaze u period u vremenskoj
+  zoni prikazanoj u aplikaciji; možeš navesti i samo početni ili krajnji datum.
+  Krajnji datum pre početnog mora da prikaže grešku bez slanja pretrage.
+- Ako postoji više stranica, pređi na drugu pa primeni filter. Prikaz mora da
+  se vrati na prvu stranicu, a broj rezultata da odgovara filtriranoj listi.
+  Promena stranice, osvežavanje i povratak iz utakmice moraju da zadrže filtere.
+- Za nepostojeći naziv proveri poruku da nema rezultata za izabrane filtere.
+  „Poništi filtere” treba da očisti polja i ponovo prikaže sve utakmice.
+- Proveri forme i na uskom ekranu. Menjanje polja bez primene filtera ne treba
+  odmah da menja listu; ispod forme tada stoji obaveštenje o neprimenjenom izboru.
+
 ## Statistika i preporuke
 
 - Zbir kategorija tima mora da odgovara njegovom broju poena. Poeni greškom

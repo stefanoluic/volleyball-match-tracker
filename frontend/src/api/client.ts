@@ -92,6 +92,13 @@ export interface MatchPage {
   totalElements: number;
 }
 
+export interface MatchListFilters {
+  q?: string;
+  status?: MatchStatus;
+  from?: string;
+  until?: string;
+}
+
 export interface RosterPlayerInput {
   playerId: string;
   isLibero: boolean;
@@ -422,8 +429,14 @@ export const api = {
   updatePlayer: (teamId: string, id: string, data: PlayerInput) =>
     mutate<Player>('PUT', '/api/teams/' + teamId + '/players/' + id, data),
   deletePlayer: (teamId: string, id: string) => mutate<void>('DELETE', '/api/teams/' + teamId + '/players/' + id),
-  matches: (page: number, signal?: AbortSignal) =>
-    get<MatchPage>('/api/matches?' + new URLSearchParams({ page: String(page), size: '20' }), signal),
+  matches: (page: number, signal?: AbortSignal, filters: MatchListFilters = {}) => {
+    const query = new URLSearchParams({ page: String(page), size: '20' });
+    if (filters.q) query.set('q', filters.q);
+    if (filters.status) query.set('status', filters.status);
+    if (filters.from) query.set('from', filters.from);
+    if (filters.until) query.set('until', filters.until);
+    return get<MatchPage>('/api/matches?' + query, signal);
+  },
   match: (id: string, signal?: AbortSignal) => get<Match>('/api/matches/' + id, signal),
   createMatch: (data: MatchInput) => post<Match>('/api/matches', data),
   updateMatch: (id: string, data: MatchInput) => mutate<Match>('PUT', '/api/matches/' + id, data),
