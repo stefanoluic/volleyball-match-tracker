@@ -35,10 +35,18 @@ export function validateMatchInput(input: MatchFormInput): Record<string, string
   return errors;
 }
 
-export function toMatchInput(input: MatchFormInput): MatchInput {
+export function toMatchInput(input: MatchFormInput, originalScheduledAt?: string): MatchInput {
   const date = parseLocalDateTime(input.localDateTime);
   if (Object.keys(validateMatchInput(input)).length || !date) throw new Error('Neispravni podaci utakmice.');
-  return { homeTeamId: input.homeTeamId, awayTeamId: input.awayTeamId, scheduledAt: date.toISOString() };
+  let scheduledAt = date.toISOString();
+  const localValue = input.localDateTime.length === 16 ? input.localDateTime + ':00' : input.localDateTime;
+  if (originalScheduledAt && Number.isFinite(new Date(originalScheduledAt).getTime())
+    && localValue === toLocalDateTime(originalScheduledAt)) {
+    // A repeated autumn clock time cannot encode its UTC offset. Keep the original
+    // instant (and fractional precision) when the displayed time has not changed.
+    scheduledAt = originalScheduledAt;
+  }
+  return { homeTeamId: input.homeTeamId, awayTeamId: input.awayTeamId, scheduledAt };
 }
 
 export function toLocalDateTime(instant: string): string {

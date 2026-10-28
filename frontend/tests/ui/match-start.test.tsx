@@ -45,6 +45,11 @@ function renderPage(canManage = true, onBack = vi.fn()) {
   return onBack;
 }
 async function loaded() { await screen.findByRole('form', { name: 'Priprema prvog seta' }); }
+function unloadWouldWarn() {
+  const event = new Event('beforeunload', { cancelable: true });
+  window.dispatchEvent(event);
+  return event.defaultPrevented;
+}
 async function chooseSlot(team: Team, index: number) {
   fireEvent.click(screen.getByRole('combobox', { name: team.name + ' · pozicija ' + (index + 1) }));
   fireEvent.click(await screen.findByRole('option', {
@@ -59,8 +64,10 @@ async function fill() {
 test('statistician confirms before starting, then sees saved sixes and 0:0', async () => {
   const write = vi.spyOn(api, 'startMatch').mockResolvedValue(started);
   renderPage(); await loaded();
+  expect(unloadWouldWarn()).toBe(false);
   expect(document.activeElement).toBe(screen.getByRole('heading', { name: 'Početne postave' }));
   await fill();
+  expect(unloadWouldWarn()).toBe(true);
   fireEvent.click(screen.getByRole('button', { name: 'Počni utakmicu' }));
   expect(write).not.toHaveBeenCalled();
   expect(screen.getByText('Pokretanje utakmice')).toBeTruthy();
@@ -74,7 +81,17 @@ test('statistician confirms before starting, then sees saved sixes and 0:0', asy
   expect(screen.getByRole('region', { name: 'Rezultat seta 1' })).toBeTruthy();
   expect(screen.queryByRole('form')).toBeNull();
   expect(notifications.show).toHaveBeenCalledTimes(1);
+  expect(unloadWouldWarn()).toBe(false);
 }, 20_000);
+
+test('discarding partial starting sixes releases the browser unload warning', async () => {
+  renderPage(); await loaded(); await chooseSlot(home, 0);
+  expect(unloadWouldWarn()).toBe(true);
+  fireEvent.click(screen.getByRole('button', { name: 'Učitaj trenutno stanje' }));
+  expect(screen.getByText('Nesačuvane postave')).toBeTruthy();
+  fireEvent.click(screen.getByRole('button', { name: 'Odbaci izmene' }));
+  await loaded(); expect(unloadWouldWarn()).toBe(false);
+});
 test('registered liberos are excluded and another occupied slot cannot reuse a player', async () => {
   renderPage(); await loaded();
   await chooseSlot(home, 0);

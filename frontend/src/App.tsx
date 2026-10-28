@@ -5,6 +5,7 @@ import { lazy, Suspense, useEffect, useState } from 'react';
 import { api, ApiError, errorMessage, roleLabels, type User } from './api/client';
 import { AuthPage } from './auth/AuthPage';
 import { Brand } from './components/Brand';
+import { AppErrorBoundary } from './components/AppErrorBoundary';
 import { usePolling } from './hooks/usePolling';
 
 const AdminUsersPage = lazy(() => import('./admin/AdminUsersPage').then(({ AdminUsersPage }) => ({ default: AdminUsersPage })));
@@ -12,6 +13,10 @@ const TeamsPage = lazy(() => import('./teams/TeamsPage').then(({ TeamsPage }) =>
 const MatchesPage = lazy(() => import('./matches/MatchesPage').then(({ MatchesPage }) => ({ default: MatchesPage })));
 
 export function App() {
+  return <AppErrorBoundary><Application /></AppErrorBoundary>;
+}
+
+function Application() {
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
   const [startupError, setStartupError] = useState('');

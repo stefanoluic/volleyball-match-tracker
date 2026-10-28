@@ -1,10 +1,7 @@
 import { Alert, Badge, Button, Group, Paper, Select, SimpleGrid, Stack, Text, Title } from '@mantine/core';
 import { useEffect, useState, type FormEvent } from 'react';
 import type { Match, MatchPlayer, SetScore } from '../api/client';
-
-export type SubstitutionCommand =
-  | { kind: 'substitute'; requestId: string; version: number; outgoingParticipantId: string; incomingParticipantId: string }
-  | { kind: 'undoSubstitution'; requestId: string; version: number; substitutionId: string };
+import type { SubstitutionCommand } from './commands';
 
 const label = (player: MatchPlayer) => '#' + player.jerseyNumber + ' ' + player.firstName + ' ' + player.lastName;
 

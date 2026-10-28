@@ -29,6 +29,11 @@ function renderPage(canManage = true, onBack = vi.fn()) {
 async function loaded() { await screen.findByRole('form', { name: 'Sastavi utakmice' }); }
 function choose(name = '#7 Marko Marković') { fireEvent.click(screen.getByRole('checkbox', { name })); }
 function save() { fireEvent.click(screen.getByRole('button', { name: 'Sačuvaj sastave' })); }
+function unloadWouldWarn() {
+  const event = new Event('beforeunload', { cancelable: true });
+  window.dispatchEvent(event);
+  return event.defaultPrevented;
+}
 beforeEach(() => {
   vi.spyOn(api, 'matchRoster').mockResolvedValue(roster);
   vi.spyOn(notifications, 'show').mockReturnValue('notice');
@@ -131,6 +136,30 @@ test('back navigation protects unsaved changes without a modal', async () => {
   fireEvent.click(screen.getByRole('button', { name: 'Nazad na utakmice' }));
   fireEvent.click(screen.getByRole('button', { name: 'Odbaci izmene' }));
   expect(back).toHaveBeenCalledTimes(1);
+});
+
+test('browser unload is guarded for dirty and saving rosters, then released after save or discard', async () => {
+  const saved: MatchRoster = { ...roster, version: 1, home: { ...roster.home, selected: [savedPlayer(marko)] } };
+  let resolve!: (result: MatchRoster) => void;
+  const write = vi.spyOn(api, 'saveMatchRoster').mockReturnValue(new Promise(done => { resolve = done; }));
+  renderPage(); await loaded();
+  expect(unloadWouldWarn()).toBe(false);
+  choose(); expect(unloadWouldWarn()).toBe(true);
+  save(); await waitFor(() => expect(write).toHaveBeenCalledTimes(1));
+  expect(unloadWouldWarn()).toBe(true);
+  await act(async () => resolve(saved));
+  await screen.findByText('Prikazan je sačuvani sastav.');
+  expect(unloadWouldWarn()).toBe(false);
+  choose(); expect(unloadWouldWarn()).toBe(true);
+  vi.mocked(api.matchRoster).mockResolvedValue(saved);
+  fireEvent.click(screen.getByRole('button', { name: 'Učitaj sačuvani sastav' }));
+  fireEvent.click(screen.getByRole('button', { name: 'Odbaci izmene' }));
+  await loaded(); expect(unloadWouldWarn()).toBe(false);
+});
+
+test('read-only roster review never blocks browser unload', async () => {
+  renderPage(false); await loaded();
+  expect(unloadWouldWarn()).toBe(false);
 });
 test('third libero is rejected before API write', async () => {
   const players: Player[] = [1, 2, 3].map((n) => ({ ...marko, id: 'p' + n, firstName: 'Igrač' + n, jerseyNumber: n, position: 'LIBERO' }));

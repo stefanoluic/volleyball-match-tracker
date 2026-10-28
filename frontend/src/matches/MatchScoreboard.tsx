@@ -4,18 +4,14 @@ import { IconPlus, IconRefresh, IconArrowBackUp } from '@tabler/icons-react';
 import { useEffect, useRef, useState } from 'react';
 import { api, ApiError, errorMessage, type Match, type MatchPreparation, type MatchSet, type SetPoint, type SetScore } from '../api/client';
 import { SetCourtView } from './SetCourtView';
-import { SetSubstitutions, type SubstitutionCommand } from './SetSubstitutions';
-import { LiberoReplacements, type LiberoCommand } from './LiberoReplacements';
-import { PointDetailsForm, type AddPointCommand } from './PointDetailsForm';
+import { SetSubstitutions } from './SetSubstitutions';
+import { LiberoReplacements } from './LiberoReplacements';
+import { PointDetailsForm } from './PointDetailsForm';
 import { pointActionLabels, pointPlayerLabel } from './pointDetails';
 import { MatchStatisticsPanel } from './MatchStatisticsPanel';
 import { useLiveRefresh } from './useLiveRefresh';
 import { LiveRefreshNotice } from './LiveRefreshNotice';
-
-type Command = AddPointCommand
-  | { kind: 'undo'; requestId: string; version: number; pointId: string }
-  | { kind: 'finish'; requestId: string; version: number }
-  | SubstitutionCommand | LiberoCommand;
+import { executeMatchCommand, type MatchCommand } from './commands';
 
 const time = (value: string) => new Intl.DateTimeFormat('sr-Latn-RS', {
   hour: '2-digit', minute: '2-digit', second: '2-digit',
@@ -32,7 +28,7 @@ export function MatchScoreboard({ match, set, canManage, onBusyChange, onSetFini
   const [writeError, setWriteError] = useState('');
   const [busy, setBusy] = useState(false);
   const writing = useRef(false);
-  const [pending, setPending] = useState<Command | null>(null);
+  const [pending, setPending] = useState<MatchCommand | null>(null);
   const [confirming, setConfirming] = useState<SetPoint | null>(null);
   const [confirmFinish, setConfirmFinish] = useState(false);
   const [substitutionEditing, setSubstitutionEditing] = useState(false);
@@ -66,12 +62,13 @@ export function MatchScoreboard({ match, set, canManage, onBusyChange, onSetFini
     if (writing.current) return;
     setConfirming(null); setConfirmFinish(false); setAttempt((value) => value + 1);
   }
-  async function execute(command: Command) {
+  async function execute(command: MatchCommand) {
     if (writing.current || loading || !canManage) return;
     writing.current = true; setBusy(true); setWriteError('');
     try {
-      if (command.kind === 'finish') {
-        const result = await api.finishSet(match.id, set.id, { requestId: command.requestId, version: command.version });
+      const outcome = await executeMatchCommand(match.id, set.id, command);
+      if (outcome.kind === 'finish') {
+        const result = outcome.preparation;
         const finished = result.sets.find((entry) => entry.id === set.id);
         if (finished) setScore((current) => current && ({ ...current, version: finished.scoreVersion,
           homeScore: finished.homeScore, awayScore: finished.awayScore, setStatus: finished.status,
@@ -81,25 +78,7 @@ export function MatchScoreboard({ match, set, canManage, onBusyChange, onSetFini
         notifications.show({ title: 'Set je završen', message: 'Konačan rezultat je sačuvan.', color: 'teal', role: 'status' });
         return;
       }
-      const result = command.kind === 'libero'
-        ? await api.replaceLibero(match.id, set.id, { requestId: command.requestId, version: command.version,
-          outgoingParticipantId: command.outgoingParticipantId, incomingParticipantId: command.incomingParticipantId })
-        : command.kind === 'undoLibero'
-        ? await api.undoLiberoReplacement(match.id, set.id, command.replacementId, { requestId: command.requestId, version: command.version })
-        : command.kind === 'substitute'
-        ? await api.substitute(match.id, set.id, { requestId: command.requestId, version: command.version,
-          outgoingParticipantId: command.outgoingParticipantId, incomingParticipantId: command.incomingParticipantId })
-        : command.kind === 'undoSubstitution'
-        ? await api.undoSubstitution(match.id, set.id, command.substitutionId, { requestId: command.requestId, version: command.version })
-        : command.kind === 'add'
-        ? await api.addPoint(match.id, set.id, {
-          requestId: command.requestId, version: command.version, scoringTeamId: command.scoringTeamId,
-          ...(command.actionType !== undefined ? { actionType: command.actionType, participantId: command.participantId ?? null } : {}),
-        })
-        : await api.undoPoint(match.id, set.id, command.pointId, {
-          requestId: command.requestId, version: command.version,
-        });
-      setScore(result); setPending(null); setConfirming(null);
+      setScore(outcome.score); setPending(null); setConfirming(null);
       if (command.kind === 'undo') notifications.show({
         title: 'Poen je poništen', message: 'Rezultat je ažuriran. Unos ostaje vidljiv u istoriji.', color: 'teal', role: 'status',
       });

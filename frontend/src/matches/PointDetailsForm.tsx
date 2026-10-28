@@ -1,9 +1,8 @@
 import { Alert, Button, Group, Select, Stack, Text } from '@mantine/core';
 import { useEffect, useState, type FormEvent } from 'react';
-import type { AddPointInput, Match, PointActionType, SetScore } from '../api/client';
+import type { Match, PointActionType, SetScore } from '../api/client';
 import { pointActionLabels, pointPlayerLabel, pointPlayerOptions } from './pointDetails';
-
-export type AddPointCommand = AddPointInput & { kind: 'add' };
+import type { AddPointCommand } from './commands';
 
 export function PointDetailsForm({ match, score, disabled, busy, onCommand, onEditingChange }: {
   match: Match; score: SetScore; disabled: boolean; busy: boolean;

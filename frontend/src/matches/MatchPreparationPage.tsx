@@ -4,6 +4,7 @@ import { IconArrowLeft, IconPlayerPlay, IconRefresh, IconBallVolleyball } from '
 import { useEffect, useRef, useState, type FormEvent } from 'react';
 import { api, errorMessage, type LineupPlayer, type MatchPreparation, type StartMatchInput, type TeamRoster } from '../api/client';
 import { EditorPage } from '../components/EditorPage';
+import { useUnsavedChangesWarning } from '../hooks/useUnsavedChangesWarning';
 import { positionLabels } from '../players/validation';
 import { formatMatchTime, matchStatusLabels } from './validation';
 import { hasStartDraft, initialStartInput, rotationLabels, validateStartInput } from './lineup';
@@ -95,6 +96,7 @@ export function MatchPreparationPage({ matchId, canManage, onBack }: {
   const editable = !!data && canManage && ((data.roster.match.status === 'SCHEDULED' && !data.firstSet)
     || (preparingNext && data.roster.match.status === 'LIVE' && !!data.nextSetNumber));
   const dirty = editable && !!input && !!data && hasStartDraft(input, initialStartInput(data).firstServingTeamId);
+  useUnsavedChangesWarning(dirty || busy || scoringBusy);
   function navigate(destination: 'back' | 'reload' | 'overview') {
     if (busy || scoringBusy) return;
     setConfirming(false);

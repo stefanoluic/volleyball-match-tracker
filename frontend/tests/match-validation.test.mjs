@@ -23,6 +23,38 @@ test('editing round-trips dates and preserves seconds', () => {
       new Date(instant).toISOString());
   }
 });
+
+for (const original of ['2026-10-25T00:30:00Z', '2026-10-25T01:30:00Z', '2026-10-25T02:30:00+01:00']) {
+  test('unchanged editing preserves the exact autumn instant: ' + original, () => {
+    const localDateTime = toLocalDateTime(original);
+    assert.equal(localDateTime, '2026-10-25T02:30:00');
+    assert.equal(toMatchInput({ ...input, localDateTime }, original).scheduledAt, original);
+    // Browsers may omit the optional :00 seconds in datetime-local controls.
+    assert.equal(toMatchInput({ ...input, localDateTime: localDateTime.slice(0, 16) }, original).scheduledAt, original);
+  });
+}
+
+test('unchanged editing also retains fractional timestamp precision', () => {
+  const original = '2026-10-25T01:30:12.123456Z';
+  assert.equal(toMatchInput({ ...input, localDateTime: toLocalDateTime(original) }, original).scheduledAt, original);
+});
+
+test('actually changing the local time uses the new value instead of the old instant', () => {
+  assert.equal(toMatchInput({ ...input, localDateTime: '2026-10-25T03:30' }, '2026-10-25T01:30:00Z').scheduledAt,
+    '2026-10-25T02:30:00.000Z');
+});
+
+test('a new ambiguous autumn time still uses the earlier occurrence', () => {
+  assert.equal(toMatchInput({ ...input, localDateTime: '2026-10-25T02:30' }).scheduledAt, '2026-10-25T00:30:00.000Z');
+});
+
+test('providing an original instant never bypasses form validation', () => {
+  const original = '2026-10-25T01:30:00Z';
+  assert.throws(() => toMatchInput({ ...input, localDateTime: '' }, original));
+  assert.throws(() => toMatchInput({ ...input, awayTeamId: 'home' }, original));
+  assert.throws(() => toMatchInput({ ...input, localDateTime: '2026-03-29T02:30' }, original));
+  assert.equal(toMatchInput(input, 'not-a-date').scheduledAt, toMatchInput(input).scheduledAt);
+});
 for (const localDateTime of ['bad', '2026-02-30T18:30', '2026-13-01T18:30', '2026-10-15T25:00',
   '2026-10-15T18:99', '2026-10-15', '2026-10-15T18:00Z', '0000-01-01T18:30', '2026-03-29T02:30']) {
   test('rejects invalid or skipped local time: ' + localDateTime, () => {

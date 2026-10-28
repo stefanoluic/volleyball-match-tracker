@@ -120,7 +120,7 @@ export function MatchesPage({ canManage }: { canManage: boolean }) {
     if (Object.keys(validation).length > 0) return;
     setBusy('save');
     try {
-      const data = toMatchInput(input);
+      const data = toMatchInput(input, editor.type === 'edit' ? editor.match.scheduledAt : undefined);
       if (editor.type === 'create') await api.createMatch(data);
       else await api.updateMatch(editor.match.id, data);
       notifications.show({

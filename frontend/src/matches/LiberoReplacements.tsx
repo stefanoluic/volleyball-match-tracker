@@ -1,10 +1,8 @@
 import { Alert, Badge, Button, Group, Paper, Select, Stack, Text, Title } from '@mantine/core';
 import { useEffect, useState, type FormEvent } from 'react';
 import type { Match, MatchPlayer, SetScore } from '../api/client';
+import type { LiberoCommand } from './commands';
 
-export type LiberoCommand =
-  | { kind: 'libero'; requestId: string; version: number; outgoingParticipantId: string; incomingParticipantId: string }
-  | { kind: 'undoLibero'; requestId: string; version: number; replacementId: string };
 const label = (player: MatchPlayer) => '#' + player.jerseyNumber + ' ' + player.firstName + ' ' + player.lastName;
 
 export function LiberoReplacements({ match, score, canManage, disabled, busy, onCommand, onEditingChange }: {

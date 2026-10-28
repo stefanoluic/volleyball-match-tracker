@@ -48,6 +48,19 @@ istog pregledača dele prijavljenu sesiju. Ne stavljaj lozinke u snimke ekrana.
     i povratak nakon odjave. Za prekid mreže koristi offline režim alata
     pregledača: automatski prikaz treba da pauzira, pa nastavi po povratku veze.
 
+## Nesačuvani unosi i oporavak prikaza
+
+- U probnoj zakazanoj utakmici promeni sastav ili delimično izaberi početne
+  postave, pa pokušaj F5 ili zatvaranje taba. Ako pregledač prikaže upozorenje,
+  izaberi ostanak na stranici: izbor treba da ostane nepromenjen.
+- Nakon čuvanja ili izričitog odbacivanja izmena, stranica ne treba da upozorava
+  zbog prethodnog izbora. I čist prikaz stručnog štaba treba da ostane bez upozorenja.
+- Pregledač određuje izgled i dostupnost dijaloga; neki mobilni pregledači ga
+  mogu potisnuti. Ovo nije automatsko čuvanje nacrta.
+- Ako se pojavi ekran „Aplikacija nije mogla da se prikaže”, dugme za ponovno
+  učitavanje je ručno: nema automatskog ponavljanja unosa. Posle učitavanja proveri
+  podatke pre nego što ponovo pošalješ prethodni unos.
+
 ## Pretraga utakmica
 
 - U tabu Utakmice unesi deo naziva domaćeg ili gostujućeg tima i pritisni

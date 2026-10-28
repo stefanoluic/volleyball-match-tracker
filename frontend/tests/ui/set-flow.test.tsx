@@ -89,11 +89,14 @@ test('fifth set requires a fresh toss selection',async()=>{
 },20_000);
 test('discarding partial next-set preparation returns to overview without a write',async()=>{
   const start=vi.spyOn(api,'startNextSet');
-  renderPage(); await prepareNext(); await chooseSlot(home,0);
+  const unloadWouldWarn=()=>{const event=new Event('beforeunload',{cancelable:true});window.dispatchEvent(event);return event.defaultPrevented;};
+  renderPage(); await prepareNext(); expect(unloadWouldWarn()).toBe(false);
+  await chooseSlot(home,0); expect(unloadWouldWarn()).toBe(true);
   fireEvent.click(screen.getByRole('button',{name:'Odustani od pripreme'}));
   expect(screen.getByText('Nesačuvane postave')).toBeTruthy();
   fireEvent.click(screen.getByRole('button',{name:'Odbaci izmene'}));
   await screen.findByRole('button',{name:'Pripremi set 2'}); expect(start).not.toHaveBeenCalled();
+  expect(unloadWouldWarn()).toBe(false);
 });
 test('stale next-set start preserves entered sixes until explicit refresh',async()=>{
   vi.spyOn(api,'startNextSet').mockRejectedValue(new ApiError('Stanje setova je promenjeno.',409));

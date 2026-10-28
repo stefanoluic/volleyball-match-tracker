@@ -4,6 +4,7 @@ import { IconArrowLeft, IconCheck, IconRefresh, IconUsers } from '@tabler/icons-
 import { useEffect, useState, type FormEvent } from 'react';
 import { api, errorMessage, type MatchRoster, type MatchRosterInput, type RosterPlayerInput, type TeamRoster } from '../api/client';
 import { EditorPage } from '../components/EditorPage';
+import { useUnsavedChangesWarning } from '../hooks/useUnsavedChangesWarning';
 import { positionLabels } from '../players/validation';
 import { formatMatchTime, matchStatusLabels } from './validation';
 import { initialRosterInput, rosterRows, sameSelection, validateRosterInput } from './roster';
@@ -92,6 +93,7 @@ export function MatchRosterPage({ matchId, canManage, onBack }: { matchId: strin
   const original = roster ? initialRosterInput(roster) : null;
   const dirty = !!(input && original && (!sameSelection(input.homePlayers, original.homePlayers)
     || !sameSelection(input.awayPlayers, original.awayPlayers)));
+  useUnsavedChangesWarning(Boolean(editable && dirty) || busy);
 
   function navigate(destination: 'back' | 'reload') {
     if (busy) return;

@@ -94,7 +94,20 @@ test('editing prefills participants and preserves the instant when unchanged', a
   expect((screen.getByLabelText(/^Datum i vreme/) as HTMLInputElement).value).toBe(toLocalDateTime(match.scheduledAt).replace(/:00$/, ''));
   fireEvent.click(screen.getByRole('button', { name: 'Sačuvaj izmene' }));
   await waitFor(() => expect(update).toHaveBeenCalledExactlyOnceWith(match.id, {
-    homeTeamId: home.id, awayTeamId: away.id, scheduledAt: new Date(match.scheduledAt).toISOString(),
+    homeTeamId: home.id, awayTeamId: away.id, scheduledAt: match.scheduledAt,
+  }));
+});
+
+test('saving an unchanged edit retains the original instant and subsecond precision in the API payload', async () => {
+  const original = { ...match, scheduledAt: '2026-10-25T01:30:00.123456Z' };
+  vi.mocked(api.matches).mockResolvedValue({ ...populated, content: [original] });
+  const update = vi.spyOn(api, 'updateMatch').mockResolvedValue(original);
+  renderPage(); await screen.findByRole('article');
+  fireEvent.click(screen.getByRole('button', { name: 'Izmeni' }));
+  await waitFor(() => expect(screen.queryByText('Učitavanje timova…')).toBeNull());
+  fireEvent.click(screen.getByRole('button', { name: 'Sačuvaj izmene' }));
+  await waitFor(() => expect(update).toHaveBeenCalledExactlyOnceWith(original.id, {
+    homeTeamId: home.id, awayTeamId: away.id, scheduledAt: original.scheduledAt,
   }));
 });
 test('failed save retains participants and date inside the editor', async () => {
