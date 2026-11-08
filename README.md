@@ -99,9 +99,3 @@ This is a local development application, not a complete official refereeing
 system. It implements ordinary match workflows, not every exceptional
 substitution, sanction or competition-specific roster rule. Teams are shared
 within the application; there is no separate club ownership.
-
-Automatic following uses polling, not WebSockets. Sessions are held in backend
-memory. PDF reports and password recovery are not implemented.
-Public hosting needs separate deployment configuration, HTTPS, secure cookies,
-abuse/rate limiting and operational safeguards. Do not expose the demo environment
-or reuse its password elsewhere.
