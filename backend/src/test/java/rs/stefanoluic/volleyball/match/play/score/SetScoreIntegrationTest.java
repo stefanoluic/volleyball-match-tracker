@@ -1,5 +1,7 @@
 package rs.stefanoluic.volleyball.match.play.score;
 
+import jakarta.persistence.EntityManagerFactory;
+import org.hibernate.SessionFactory;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
@@ -22,6 +24,9 @@ import rs.stefanoluic.volleyball.common.exception.ApiException;
 import rs.stefanoluic.volleyball.match.*;
 import rs.stefanoluic.volleyball.match.play.*;
 import rs.stefanoluic.volleyball.match.play.score.dto.*;
+import rs.stefanoluic.volleyball.match.play.libero.LiberoReplacementService;
+import rs.stefanoluic.volleyball.match.play.substitution.SetSubstitutionService;
+import rs.stefanoluic.volleyball.match.play.substitution.dto.SubstituteRequest;
 import rs.stefanoluic.volleyball.match.roster.MatchPlayer;
 import rs.stefanoluic.volleyball.match.roster.MatchPlayerRepository;
 import rs.stefanoluic.volleyball.player.*;
@@ -61,6 +66,9 @@ class SetScoreIntegrationTest {
     @Autowired PasswordEncoder encoder;
     @Autowired JdbcTemplate jdbc;
     @Autowired ObjectMapper mapper;
+    @Autowired EntityManagerFactory entityManagerFactory;
+    @Autowired SetSubstitutionService substitutionService;
+    @Autowired LiberoReplacementService liberoService;
     private Match match;
     private MatchSet set;
     private Team home;
@@ -103,6 +111,58 @@ class SetScoreIntegrationTest {
             var participant = participants.saveAndFlush(new MatchPlayer(match, team, player, false));
             lineups.saveAndFlush(new SetLineup(set, match, participant, position));
         }
+    }
+
+    @Test void scoreReadSharesDataAfterPointsSubstitutionsAndLiberoChanges() {
+        startingSixes();
+        var reservePlayer = players.saveAndFlush(new Player(home, "Rezervni", "Igrač", 7, PlayerPosition.SETTER));
+        var reserve = participants.saveAndFlush(new MatchPlayer(match, home, reservePlayer, false));
+        var liberoPlayer = players.saveAndFlush(new Player(away, "Libero", "Igrač", 8, PlayerPosition.LIBERO));
+        var libero = participants.saveAndFlush(new MatchPlayer(match, away, liberoPlayer, true));
+        var roster = participants.findByMatchIdOrderByJerseyNumberAscIdAsc(match.getId());
+        var outgoingHome = roster.stream().filter(row -> row.getTeam().getId().equals(home.getId())
+                && row.getJerseyNumber() == 4).findFirst().orElseThrow();
+        var outgoingAway = roster.stream().filter(row -> row.getTeam().getId().equals(away.getId())
+                && row.getJerseyNumber() == 1).findFirst().orElseThrow();
+        substitutionService.add(match.getId(), set.getId(), new SubstituteRequest(UUID.randomUUID(), 0,
+                outgoingHome.getId(), reserve.getId()));
+        liberoService.add(match.getId(), set.getId(), new SubstituteRequest(UUID.randomUUID(), 1,
+                outgoingAway.getId(), libero.getId()));
+        var recorded = add(2, home);
+        // Compare persisted timestamps: PostgreSQL rounds Java instants to microseconds.
+        var expected = service.get(match.getId(), set.getId());
+
+        var statistics = entityManagerFactory.unwrap(SessionFactory.class).getStatistics();
+        boolean wasEnabled = statistics.isStatisticsEnabled();
+        statistics.setStatisticsEnabled(true);
+        try {
+            statistics.clear();
+            var result = service.get(match.getId(), set.getId());
+            // Includes match/set lookup, shared collections and the three bounded history lists.
+            assertThat(statistics.getPrepareStatementCount()).as("SQL statements for one score read").isBetween(1L, 12L);
+            assertThat(result).isEqualTo(expected);
+            assertThat(result.court().homeLineup()).anyMatch(row -> row.participant().id().equals(reserve.getId()));
+            assertThat(result.court().awayLineup()).anyMatch(row -> row.participant().id().equals(libero.getId()));
+            assertThat(result.libero().active()).hasSize(1);
+            assertThat(result.substitutions().homeUsed()).isEqualTo(1);
+            assertThat(result.canUndo()).isTrue();
+            assertThat(result.substitutions().undoableId()).isNull();
+            assertThat(result.libero().undoableId()).isNull();
+        } finally {
+            statistics.setStatisticsEnabled(wasEnabled);
+        }
+        var restored = undo(3, recorded.lastActivePoint().id());
+        assertThat(restored.homeScore()).isZero();
+        assertThat(restored.libero().undoableId()).isNotNull();
+        assertThat(restored.substitutions().pointUndoBlocked()).isFalse();
+        var refreshed = service.get(match.getId(), set.getId());
+        assertThat(refreshed.version()).isEqualTo(restored.version());
+        assertThat(refreshed.homeScore()).isZero();
+        assertThat(refreshed.lastActivePoint()).isNull();
+        assertThat(refreshed.points()).singleElement().satisfies(point -> assertThat(point.cancelledAt()).isNotNull());
+        assertThat(refreshed.court()).isEqualTo(restored.court());
+        assertThat(refreshed.libero()).isEqualTo(restored.libero());
+        assertThat(refreshed.substitutions()).isEqualTo(restored.substitutions());
     }
 
     @Test void courtTracksSideOutAndUndoRestoresServerAndOriginalSixes() throws Exception {

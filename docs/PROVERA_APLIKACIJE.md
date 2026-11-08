@@ -94,6 +94,11 @@ testovi koriste privremenu PostgreSQL bazu, ne razvojnu bazu. Povezani test
 u `MatchStatisticsIntegrationTest` prolazi kroz 3:2, uključujući peti set
 16:14, izmenu, libera, poništavanje, ponovljeni zahtev i konačnu statistiku.
 
+Testovi proveravaju i unos teksta nalik SQL naredbama kroz prijavu, naziv tima
+i pretragu utakmica: takav unos ne sme da zaobiđe prijavu, proširi rezultate
+pretrage ili promeni druge zapise. Veoma veliki pomeraji stranica na listama
+timova, igrača, utakmica i naloga moraju da vrate HTTP 400 umesto greške servera.
+
 Iz direktorijuma `frontend`: `npm test` i `npm run build`. Testovi komponenti
 proveravaju i završno osvežavanje statistike, odbacivanje zakasnelog odgovora
 i ručni oporavak nakon neuspelog završnog učitavanja.

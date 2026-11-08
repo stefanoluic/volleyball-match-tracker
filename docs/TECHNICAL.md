@@ -72,6 +72,22 @@ The fourteenth migration adds a partial index on active points by match and set
 for the statistics query. Statistics are derived from points, not stored in a
 separate totals table.
 
+## Query inputs and pagination
+
+Repository methods and named JPQL parameters bind user-supplied values as data.
+Match search uses the Criteria API and treats `%`, `_` and backslashes as literal
+search characters. The demo initializer's table-lock statement is fixed SQL.
+Integration tests send SQL-like text through login, team creation/duplicate checks
+and match search, checking authentication, literal results and preserved records.
+These tests cover those input paths, not a complete penetration test.
+
+Team, player, match and administrator account lists share pagination validation:
+zero-based nonnegative pages, sizes from 1 to 100 and a row offset no larger than
+`Integer.MAX_VALUE`, the limit accepted by JPA. The offset is calculated using
+`long` before validation. Unsupported offsets return HTTP 400 with the normal
+API error body; supported pages beyond the available records return an empty list.
+Sort fields are fixed by the backend.
+
 ## Accounts and sessions
 
 - Public registration accepts only `STATISTICIAN` or `COACH`, always as `PENDING`.
@@ -371,6 +387,11 @@ firstServingTeamId. The lineup arrays contain six match participant IDs
 - Score/history reads use a repeatable-read snapshot. Osveži rezultat reloads
   the current state; coaching staff also receive automatic updates through polling
   as described below. WebSocket/SSE push is not implemented.
+- Within each score response, court rotation, substitution options and libero
+  options share the loaded starting lineups, active events and match roster.
+  Undo availability is derived from those same active events. These collections
+  are loaded again after a write; they are not cached across responses. The three
+  recent-history lists remain separate queries limited to 20 entries each.
 - Once the set has a winning score, further additions are blocked while undo remains
   available. The statistician explicitly confirms completion; points alone do not
   automatically close the set or match.

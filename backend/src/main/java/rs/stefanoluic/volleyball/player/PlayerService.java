@@ -1,6 +1,6 @@
 package rs.stefanoluic.volleyball.player;
 
-import org.springframework.data.domain.PageRequest;
+import rs.stefanoluic.volleyball.common.PageRequests;
 import org.springframework.data.domain.Sort;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
@@ -28,10 +28,7 @@ public class PlayerService {
     @Transactional(readOnly = true)
     public PlayerPageResponse list(UUID teamId, int page, int size) {
         if (!teams.existsById(teamId)) throw teamNotFound();
-        if (page < 0 || size < 1 || size > 100) {
-            throw new ApiException(HttpStatus.BAD_REQUEST, "Neispravna stranica ili veličina stranice.");
-        }
-        var pageable = PageRequest.of(page, size, Sort.by(Sort.Order.asc("jerseyNumber"), Sort.Order.asc("id")));
+        var pageable = PageRequests.of(page, size, Sort.by(Sort.Order.asc("jerseyNumber"), Sort.Order.asc("id")));
         return PlayerPageResponse.from(players.findByTeamId(teamId, pageable).map(PlayerResponse::from));
     }
 

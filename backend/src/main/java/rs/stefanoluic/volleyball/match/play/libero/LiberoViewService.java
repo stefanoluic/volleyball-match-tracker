@@ -5,34 +5,26 @@ import org.springframework.stereotype.Service;
 import rs.stefanoluic.volleyball.match.MatchStatus;
 import rs.stefanoluic.volleyball.match.play.*;
 import rs.stefanoluic.volleyball.match.play.libero.dto.*;
-import rs.stefanoluic.volleyball.match.play.score.SetPoint;
 import rs.stefanoluic.volleyball.match.play.score.dto.SetCourtResponse;
-import rs.stefanoluic.volleyball.match.play.substitution.SetSubstitutionRepository;
-import rs.stefanoluic.volleyball.match.roster.MatchPlayerRepository;
 import rs.stefanoluic.volleyball.match.roster.dto.MatchPlayerResponse;
 import java.util.*;
 
 @Service
 public class LiberoViewService {
     private final LiberoReplacementRepository replacements;
-    private final SetLineupRepository lineups;
-    private final SetSubstitutionRepository substitutions;
-    private final MatchPlayerRepository participants;
-    private final SetPlayOrderService order;
-    public LiberoViewService(LiberoReplacementRepository replacements, SetLineupRepository lineups,
-                             SetSubstitutionRepository substitutions, MatchPlayerRepository participants, SetPlayOrderService order) {
-        this.replacements = replacements; this.lineups = lineups; this.substitutions = substitutions;
-        this.participants = participants; this.order = order;
+    public LiberoViewService(LiberoReplacementRepository replacements) {
+        this.replacements = replacements;
     }
-    public LiberoState get(MatchSet set, SetCourtResponse court, SetPoint lastPoint) {
-        var rows = replacements.findBySetIdAndCancelledAtIsNullOrderByExpectedVersionAsc(set.getId());
+    public LiberoState get(MatchSet set, SetCourtResponse court, SetPlayData data) {
+        var rows = data.liberos();
+        var lastPoint = data.lastPoint();
         var active = presence(set, court, rows);
         boolean live = set.getStatus() == MatchSetStatus.LIVE && set.getMatch().getStatus() == MatchStatus.LIVE;
         var options = new ArrayList<LiberoOption>();
         if (live && !set.hasWinningScore() && court != null) {
-            var roster = participants.findByMatchIdOrderByJerseyNumberAscIdAsc(set.getMatch().getId());
-            var starting = lineups.findBySetIdOrderByRotationPositionAsc(set.getId());
-            var ordinary = substitutions.findBySetIdAndCancelledAtIsNullOrderByExpectedVersionAsc(set.getId());
+            var roster = data.roster();
+            var starting = data.starting();
+            var ordinary = data.substitutions();
             for (UUID teamId : List.of(set.getMatch().getHomeTeam().getId(), set.getMatch().getAwayTeam().getId())) {
                 var teamRows = rows.stream().filter(row -> row.getTeamId().equals(teamId)).toList();
                 int afterPoint = lastPoint == null ? 0 : lastPoint.getSequenceNumber();
@@ -63,13 +55,13 @@ public class LiberoViewService {
             }
         }
         var last = rows.isEmpty() ? null : rows.getLast();
-        UUID undoable = live && last != null && order.isLatestAction(set.getId(), last.getExpectedVersion()) ? last.getId() : null;
+        UUID undoable = live && last != null && data.isLatestAction(last.getExpectedVersion()) ? last.getId() : null;
         var history = replacements.findBySetIdOrderByExpectedVersionDesc(set.getId(), PageRequest.of(0, 20))
                 .stream().map(LiberoReplacementResponse::from).toList();
         return new LiberoState(active, options, history, undoable, active.stream().anyMatch(LiberoPresence::mustExit));
     }
-    public boolean requiresExit(MatchSet set, SetCourtResponse court) {
-        return presence(set, court, replacements.findBySetIdAndCancelledAtIsNullOrderByExpectedVersionAsc(set.getId()))
+    public boolean requiresExit(MatchSet set, SetCourtResponse court, SetPlayData data) {
+        return presence(set, court, data.liberos())
                 .stream().anyMatch(LiberoPresence::mustExit);
     }
     private List<LiberoPresence> presence(MatchSet set, SetCourtResponse court, List<LiberoReplacement> rows) {

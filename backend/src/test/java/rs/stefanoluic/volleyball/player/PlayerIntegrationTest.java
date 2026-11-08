@@ -335,6 +335,8 @@ class PlayerIntegrationTest {
             mvc.perform(get(path(team)).session(session).param("size", size)).andExpect(status().isBadRequest());
         }
         mvc.perform(get(path(team)).session(session).param("page", "-1")).andExpect(status().isBadRequest());
+        mvc.perform(get(path(team)).session(session).param("page", "2147483647").param("size", "100"))
+                .andExpect(status().isBadRequest()).andExpect(jsonPath("$.message").exists());
         String missingTeam = "/api/teams/" + UUID.randomUUID() + "/players";
         String data = mapper.writeValueAsString(input(7, PlayerPosition.SETTER));
         mvc.perform(get(missingTeam).session(session)).andExpect(status().isNotFound());

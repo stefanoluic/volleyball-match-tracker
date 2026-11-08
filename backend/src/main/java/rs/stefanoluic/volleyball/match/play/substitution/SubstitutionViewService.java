@@ -4,39 +4,32 @@ import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
 import rs.stefanoluic.volleyball.match.MatchStatus;
 import rs.stefanoluic.volleyball.match.play.*;
-import rs.stefanoluic.volleyball.match.play.score.SetPoint;
 import rs.stefanoluic.volleyball.match.play.score.dto.SetCourtResponse;
 import rs.stefanoluic.volleyball.match.play.substitution.dto.*;
 import rs.stefanoluic.volleyball.match.roster.MatchPlayer;
-import rs.stefanoluic.volleyball.match.roster.MatchPlayerRepository;
 import rs.stefanoluic.volleyball.match.roster.dto.MatchPlayerResponse;
 import java.util.*;
 
 @Service
 public class SubstitutionViewService {
     private final SetSubstitutionRepository substitutions;
-    private final SetLineupRepository lineups;
-    private final MatchPlayerRepository participants;
-    private final SetPlayOrderService order;
-
-    public SubstitutionViewService(SetSubstitutionRepository substitutions, SetLineupRepository lineups,
-                                    MatchPlayerRepository participants, SetPlayOrderService order) {
-        this.substitutions = substitutions; this.lineups = lineups; this.participants = participants;
-        this.order = order;
+    public SubstitutionViewService(SetSubstitutionRepository substitutions) {
+        this.substitutions = substitutions;
     }
 
-    public SubstitutionState get(MatchSet set, SetCourtResponse court, SetPoint lastPoint, boolean liberoMustExit) {
-        var active = substitutions.findBySetIdAndCancelledAtIsNullOrderByExpectedVersionAsc(set.getId());
+    public SubstitutionState get(MatchSet set, SetCourtResponse court, SetPlayData data, boolean liberoMustExit) {
+        var active = data.substitutions();
+        var lastPoint = data.lastPoint();
         UUID homeId = set.getMatch().getHomeTeam().getId();
         int homeUsed = (int) active.stream().filter(row -> row.getTeamId().equals(homeId)).count();
         boolean live = set.getStatus() == MatchSetStatus.LIVE && set.getMatch().getStatus() == MatchStatus.LIVE;
         var last = active.isEmpty() ? null : active.getLast();
-        boolean laterSubstitution = lastPoint != null && order.hasChangeAfter(set.getId(), lastPoint.getExpectedVersion());
-        UUID undoable = live && last != null && order.isLatestAction(set.getId(), last.getExpectedVersion()) ? last.getId() : null;
+        boolean laterSubstitution = lastPoint != null && data.hasChangeAfter(lastPoint.getExpectedVersion());
+        UUID undoable = live && last != null && data.isLatestAction(last.getExpectedVersion()) ? last.getId() : null;
         var options = new ArrayList<SubstitutionOption>();
         if (live && !set.hasWinningScore() && court != null && !liberoMustExit) {
-            var starting = lineups.findBySetIdOrderByRotationPositionAsc(set.getId());
-            var roster = participants.findByMatchIdOrderByJerseyNumberAscIdAsc(set.getMatch().getId());
+            var starting = data.starting();
+            var roster = data.roster();
             for (UUID teamId : List.of(homeId, set.getMatch().getAwayTeam().getId())) {
                 var teamChanges = active.stream().filter(row -> row.getTeamId().equals(teamId)).toList();
                 int afterPoint = lastPoint == null ? 0 : lastPoint.getSequenceNumber();

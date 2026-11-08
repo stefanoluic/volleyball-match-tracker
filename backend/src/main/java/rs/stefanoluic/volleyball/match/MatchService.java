@@ -1,7 +1,7 @@
 package rs.stefanoluic.volleyball.match;
 
 import jakarta.persistence.criteria.Predicate;
-import org.springframework.data.domain.PageRequest;
+import rs.stefanoluic.volleyball.common.PageRequests;
 import org.springframework.data.domain.Sort;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
@@ -32,9 +32,8 @@ public class MatchService {
 
     @Transactional(readOnly = true)
     public MatchPageResponse list(int page, int size, String query, MatchStatus status, Instant from, Instant until) {
-        if (page < 0 || size < 1 || size > 100) {
-            throw new ApiException(HttpStatus.BAD_REQUEST, "Neispravna stranica ili veličina stranice.");
-        }
+        var pageable = PageRequests.of(page, size,
+                Sort.by(Sort.Order.desc("scheduledAt"), Sort.Order.asc("id")));
         String text = Team.normalizeText(query == null ? "" : query);
         if (text.length() > 100) {
             throw new ApiException(HttpStatus.BAD_REQUEST, "Pretraga može imati najviše 100 znakova.");
@@ -56,8 +55,6 @@ public class MatchService {
             if (until != null) predicates.add(builder.lessThan(root.<Instant>get("scheduledAt"), until));
             return builder.and(predicates.toArray(Predicate[]::new));
         };
-        var pageable = PageRequest.of(page, size,
-                Sort.by(Sort.Order.desc("scheduledAt"), Sort.Order.asc("id")));
         return MatchPageResponse.from(matches.findAll(filters, pageable).map(MatchResponse::from));
     }
 

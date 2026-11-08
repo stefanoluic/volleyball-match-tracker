@@ -1,6 +1,6 @@
 package rs.stefanoluic.volleyball.user;
 
-import org.springframework.data.domain.PageRequest;
+import rs.stefanoluic.volleyball.common.PageRequests;
 import org.springframework.data.domain.Sort;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
@@ -21,10 +21,7 @@ public class UserService {
     }
     @Transactional(readOnly = true)
     public UserPageResponse list(UserStatus status, int page, int size) {
-        if (page < 0 || size < 1 || size > 100) {
-            throw new ApiException(HttpStatus.BAD_REQUEST, "Neispravna stranica ili veličina stranice.");
-        }
-        var pageable = PageRequest.of(page, size, Sort.by(
+        var pageable = PageRequests.of(page, size, Sort.by(
                 Sort.Order.desc("createdAt"), Sort.Order.desc("id")));
         var results = status == null ? users.findByRoleNot(UserRole.ADMIN, pageable)
                 : users.findByRoleNotAndStatus(UserRole.ADMIN, status, pageable);

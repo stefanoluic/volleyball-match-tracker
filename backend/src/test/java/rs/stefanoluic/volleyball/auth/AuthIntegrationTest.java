@@ -145,6 +145,25 @@ class AuthIntegrationTest {
     }
 
     @ParameterizedTest
+    @ValueSource(strings = {"' OR 1=1 --", "admin@example.com' --", "'; DROP TABLE volleyball.users; --"})
+    void sqlLikeEmailCannotBypassLoginOrModifyAccounts(String email) throws Exception {
+        var anonymous = new MockHttpSession();
+        mvc.perform(post("/api/auth/login").session(anonymous).with(csrf())
+                .param("email", email).param("password", PASSWORD)).andExpect(status().isUnauthorized());
+        mvc.perform(get("/api/auth/me").session(anonymous)).andExpect(status().isUnauthorized());
+        assertThat(users.count()).isEqualTo(1);
+        assertThat(users.findById(admin.getId()).orElseThrow().getPasswordHash()).isEqualTo(admin.getPasswordHash());
+        login(admin.getEmail());
+    }
+
+    @Test
+    void sqlLikePasswordCannotBypassPasswordVerification() throws Exception {
+        mvc.perform(post("/api/auth/login").with(csrf()).param("email", admin.getEmail())
+                .param("password", "' OR 1=1 --")).andExpect(status().isUnauthorized());
+        login(admin.getEmail());
+    }
+
+    @ParameterizedTest
     @ValueSource(strings = {"Stefan2", "Oluic!", "O'Neil", "🙂", "-", "-Stefan", "Oluic-", "Ana--Marija"})
     void rejectsInvalidNamesOnBothFields(String name) throws Exception {
         var request = new java.util.HashMap<>(registration("user@example.com", "COACH"));
@@ -230,6 +249,8 @@ class AuthIntegrationTest {
                 .andExpect(status().isBadRequest());
         mvc.perform(get("/api/admin/users").session(session).param("page", "-1"))
                 .andExpect(status().isBadRequest());
+        mvc.perform(get("/api/admin/users").session(session).param("page", "2147483647").param("size", "100"))
+                .andExpect(status().isBadRequest()).andExpect(jsonPath("$.message").exists());
         mvc.perform(get("/api/admin/users").session(session).param("status", "UNKNOWN"))
                 .andExpect(status().isBadRequest());
     }

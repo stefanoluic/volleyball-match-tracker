@@ -93,6 +93,34 @@ class MatchSearchIntegrationTest {
                 .andExpect(status().isOk()).andExpect(jsonPath("$.totalElements").value(1));
     }
 
+    @ParameterizedTest
+    @ValueSource(strings = {"' OR 1=1 --", "'; DROP TABLE volleyball.matches; --", "' UNION SELECT null --"})
+    void sqlLikeSearchIsLiteralTextAndDoesNotModifyMatches(String value) throws Exception {
+        var special = teams.saveAndFlush(new Team("Tim " + value + " naziv", "Test"));
+        var expected = fixture(special, away, "2026-10-24T12:00:00Z", MatchStatus.SCHEDULED);
+        fixture(home, third, "2026-10-25T12:00:00Z", MatchStatus.SCHEDULED);
+        var session = login(UserRole.COACH);
+        mvc.perform(get("/api/matches").session(session).param("q", value)).andExpect(status().isOk())
+                .andExpect(jsonPath("$.totalElements").value(1))
+                .andExpect(jsonPath("$.content[0].id").value(expected.getId().toString()));
+        mvc.perform(get("/api/matches").session(session)).andExpect(status().isOk())
+                .andExpect(jsonPath("$.totalElements").value(2));
+        assertThat(matches.count()).isEqualTo(2);
+        assertThat(teams.count()).isEqualTo(4);
+    }
+
+    @Test void oversizedPageOffsetsReturnBadRequestAndSupportedEmptyPagesStillWork() throws Exception {
+        fixture(home, away, "2026-10-24T12:00:00Z", MatchStatus.SCHEDULED);
+        var session = login(UserRole.COACH);
+        for (String page : List.of("21474837", "2147483647")) {
+            mvc.perform(get("/api/matches").session(session).param("page", page).param("size", "100"))
+                    .andExpect(status().isBadRequest()).andExpect(jsonPath("$.message").exists());
+        }
+        mvc.perform(get("/api/matches").session(session).param("page", "2147483647").param("size", "1"))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.content").isEmpty())
+                .andExpect(jsonPath("$.totalElements").value(1));
+    }
+
     @ParameterizedTest @EnumSource(MatchStatus.class)
     void eachStatusFiltersBothContentAndCounts(MatchStatus value) throws Exception {
         for (var status : MatchStatus.values()) fixture(home, away, "2026-10-24T12:00:00Z", status);

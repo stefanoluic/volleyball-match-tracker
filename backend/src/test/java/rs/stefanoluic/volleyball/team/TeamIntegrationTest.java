@@ -116,6 +116,23 @@ class TeamIntegrationTest {
     }
 
     @Test
+    void sqlLikeTeamNameIsStoredAsTextAndDuplicateChecksRemainScoped() throws Exception {
+        Team existing = teams.saveAndFlush(new Team("Existing", "Beograd"));
+        String name = "OK O'Connor'; DROP TABLE volleyball.teams; --";
+        var session = login(UserRole.STATISTICIAN);
+        var response = mvc.perform(post("/api/teams").session(session).with(csrf()).contentType(MediaType.APPLICATION_JSON)
+                .content(input(name, "Novi Sad"))).andExpect(status().isCreated())
+                .andExpect(jsonPath("$.name").value(name)).andReturn();
+        UUID id = UUID.fromString(mapper.readTree(response.getResponse().getContentAsString()).get("id").asString());
+        mvc.perform(post("/api/teams").session(session).with(csrf()).contentType(MediaType.APPLICATION_JSON)
+                .content(input(name, "Novi Sad"))).andExpect(status().isConflict());
+        mvc.perform(get("/api/teams/" + id).session(session)).andExpect(status().isOk())
+                .andExpect(jsonPath("$.name").value(name));
+        assertThat(teams.count()).isEqualTo(2);
+        assertThat(teams.findById(existing.getId()).orElseThrow().getName()).isEqualTo("Existing");
+    }
+
+    @Test
     void duplicateTeamIsRejectedIgnoringCaseButNameCanExistInAnotherCity() throws Exception {
         teams.saveAndFlush(new Team("OK Vojvodina", "Novi Sad"));
         var session = login(UserRole.STATISTICIAN);
@@ -239,6 +256,8 @@ class TeamIntegrationTest {
             mvc.perform(get("/api/teams").session(session).param("size", size)).andExpect(status().isBadRequest());
         }
         mvc.perform(get("/api/teams").session(session).param("page", "-1")).andExpect(status().isBadRequest());
+        mvc.perform(get("/api/teams").session(session).param("page", "2147483647").param("size", "100"))
+                .andExpect(status().isBadRequest()).andExpect(jsonPath("$.message").exists());
     }
 
     @Test
