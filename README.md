@@ -29,20 +29,33 @@ not machine learning, and are not validated tactical advice.
 - Java 21, Spring Boot, Spring Security, Spring Data JPA, Maven
 - PostgreSQL 18 and Flyway migrations
 - React, TypeScript, Vite and Mantine UI
-- Docker Compose for the local database
+- Docker Compose for the backend, frontend and local database
 - JUnit, Testcontainers, Vitest and Testing Library
 
 ## Try it locally
 
-Prerequisites: Java 21, Maven 3.6.3+, a supported Node.js release
-(22.22.2+, 24.15+ or 26+), and Docker with Linux containers.
+**Run everything in Docker:** only Docker with Linux containers and Compose v2
+is required. Create `.env` from `.env.example` if it does not exist, set your local
+database password and configure the [initial administrator](docs/SETUP.md#initial-administrator)
+for a fresh database. Then, from the project root:
+
+~~~shell
+docker compose up --build -d --wait --wait-timeout 180
+~~~
+
+Open [localhost:5173](http://localhost:5173). Use `docker compose stop` to stop
+the stack while keeping the database. See [the complete Docker guide](docs/DOCKER.md)
+for configuration, logs, rebuilding and switching to local development.
+
+**Develop outside the application containers:** install Java 21, Maven 3.6.3+,
+a supported Node.js release (22.22.2+, 24.15+ or 26+), and Docker for the database.
 
 **For a prepopulated demo**, follow [the demo guide](docs/DEMO.md). It uses a
 separate database, volume and ports, creates fictional teams/players and three
 demo accounts, and asks you to choose a local password. It does not populate or
 reset your regular development database.
 
-**For normal development:**
+For development with the host tools:
 
 1. Copy `.env.example` to `.env` and set a local database password. Do not
    overwrite an existing configuration or commit the resulting file.
@@ -82,12 +95,13 @@ validation, concurrent writes, score corrections, complete match flows and safe
 demo initialization. Frontend tests cover validation, request handling and UI
 workflows; jsdom tests do not establish visual correctness.
 
-[GitHub Actions](.github/workflows/ci.yml) defines backend, frontend and Windows
-launcher checks. A successful local run does not establish a successful hosted
-run; Actions must be checked after publishing the repository.
+[GitHub Actions](.github/workflows/ci.yml) defines backend, frontend, container
+stack and Windows launcher checks. A successful local run does not establish a
+successful hosted run; Actions must be checked after publishing the repository.
 
 ## Documentation
 
+- [Complete Docker Compose startup](docs/DOCKER.md)
 - [Local setup, initial administrator and verification](docs/SETUP.md)
 - [Isolated demo and a short walkthrough](docs/DEMO.md)
 - [Data model, API and match rules](docs/TECHNICAL.md)

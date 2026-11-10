@@ -1,8 +1,12 @@
 # Local setup and verification
 
-[Project overview](../README.md) · [Separate demo environment](DEMO.md)
+[Project overview](../README.md) · [Complete Docker setup](DOCKER.md) · [Separate demo environment](DEMO.md)
 
 ## Windows quick start
+
+This starts Java and Vite on the host, with PostgreSQL in Docker. If you are using
+the complete container stack, stop it with `docker compose stop` before switching
+to this mode. The same development database volume is used by both modes.
 
 Double-click Pokreni.cmd in the project folder. It checks prerequisites, starts
 Docker Desktop if needed, waits for the database, starts the backend and frontend
@@ -52,7 +56,7 @@ Docker Compose both read it; browser code does not receive database credentials.
 Start the database from the project root:
 
 ```powershell
-docker compose up -d --wait
+docker compose up -d --wait database
 ```
 
 In a separate terminal, start the backend:
@@ -113,11 +117,12 @@ The first run may download the Testcontainers cleanup image.
 
 ### Continuous integration
 
-`.github/workflows/ci.yml` defines three independent checks on pushes, pull
+`.github/workflows/ci.yml` defines four independent checks on pushes, pull
 requests and manual dispatch: backend `mvn verify` on Linux with temporary
 Testcontainers databases; frontend clean install, type checks, tests and build;
-and isolated launcher safety tests on Windows. No development `.env`, database
-volume or account credentials are used. The workflow does not deploy the app.
+container image builds and an isolated stack smoke test; and launcher safety tests
+on Windows. No development `.env`, database volume or account credentials are used.
+The workflow does not deploy the app.
 It takes effect after the repository is pushed to GitHub and Actions is enabled;
 adding the file locally does not confirm a successful hosted run.
 
@@ -155,13 +160,15 @@ BOOTSTRAP_ADMIN_EMAIL=your_admin_email
 BOOTSTRAP_ADMIN_PASSWORD=your_local_admin_password
 ```
 
-Start the backend from its directory with `mvn spring-boot:run`. It creates an
+Start the backend from its directory with `mvn spring-boot:run`, or start the
+complete container stack as described in [DOCKER.md](DOCKER.md). It creates an
 active administrator named System Administrator, storing only an Argon2id hash
 in the database. The password must contain 8 to 128 characters. Use a strong,
 unique password for any deployment; do not use local demonstration credentials.
 
 After creation, set `BOOTSTRAP_ADMIN_ENABLED=false`, remove the temporary
-credentials and restart the backend. You can also supply these settings through
+credentials and restart the backend. For containers, apply the changed environment
+with `docker compose up -d --wait --wait-timeout 180`. You can also supply these settings through
 environment variables instead of `.env`.
 
 Repeat runs never reset an existing administrator's password. If another admin
