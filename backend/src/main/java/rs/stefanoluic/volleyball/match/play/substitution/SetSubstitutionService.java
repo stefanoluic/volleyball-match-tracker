@@ -19,10 +19,10 @@ public class SetSubstitutionService {
     private final SetSubstitutionRepository substitutions;
     private final MatchPlayerRepository participants;
     private final SetPointRepository points;
-    private final SetScoreService scores;
+    private final SetScoreViewService scores;
 
     public SetSubstitutionService(MatchRepository matches, MatchSetRepository sets, SetSubstitutionRepository substitutions,
-                                  MatchPlayerRepository participants, SetPointRepository points, SetScoreService scores) {
+                                  MatchPlayerRepository participants, SetPointRepository points, SetScoreViewService scores) {
         this.matches = matches; this.sets = sets; this.substitutions = substitutions;
         this.participants = participants; this.points = points; this.scores = scores;
     }

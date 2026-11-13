@@ -24,7 +24,6 @@ public class LiberoViewService {
         if (live && !set.hasWinningScore() && court != null) {
             var roster = data.roster();
             var starting = data.starting();
-            var ordinary = data.substitutions();
             for (UUID teamId : List.of(set.getMatch().getHomeTeam().getId(), set.getMatch().getAwayTeam().getId())) {
                 var teamRows = rows.stream().filter(row -> row.getTeamId().equals(teamId)).toList();
                 int afterPoint = lastPoint == null ? 0 : lastPoint.getSequenceNumber();
@@ -44,9 +43,7 @@ public class LiberoViewService {
                         if (position == 1 && teamId.equals(court.servingTeamId())) continue;
                         for (var initial : starting) {
                             if (!initial.getParticipant().getTeam().getId().equals(teamId)) continue;
-                            var occupant = initial.getParticipant();
-                            for (var change : ordinary) if (change.getTeamId().equals(teamId)
-                                    && change.getStartingPosition() == initial.getRotationPosition()) occupant = change.getIncoming();
+                            var occupant = data.regularOccupant(initial);
                             if (occupant.getId().equals(row.participant().id()) && !liberos.isEmpty())
                                 options.add(new LiberoOption(teamId, initial.getRotationPosition(), occupant.getId(), row.participant(), liberos));
                         }

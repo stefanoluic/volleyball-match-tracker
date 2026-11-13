@@ -357,6 +357,17 @@ firstServingTeamId. The lineup arrays contain six match participant IDs
 
 ## Points and score corrections
 
+`SetScoreService` handles point commands, version checks and command replay.
+`SetScoreViewService` prepares score, court and available-change responses; ordinary
+and libero command services use this reader directly. Read endpoints retain their
+repeatable-read transaction, while command responses use the command's transaction.
+`SetPlayData` resolves the regular and current occupant of each initial lineup slot
+from active changes, so court rotation and libero eligibility share the same history.
+
+On the frontend, `useMatchScore` manages score reads, polling, command execution and
+explicit retries. `MatchScoreboard` renders the result, confirmations and player-change
+forms. The hook retains the original command identifier and version for uncertain writes.
+
 - In Pregled utakmice, statisticians use Poen za domaćina or Poen za gosta for
   score-only entry, or Detaljan unos poena for a finishing action and optional
   player as described below. Either workflow stores exactly one point and updates

@@ -19,9 +19,9 @@ public class LiberoReplacementService {
     private final LiberoReplacementRepository replacements;
     private final MatchPlayerRepository participants;
     private final SetPointRepository points;
-    private final SetScoreService scores;
+    private final SetScoreViewService scores;
     public LiberoReplacementService(MatchRepository matches, MatchSetRepository sets, LiberoReplacementRepository replacements,
-                                     MatchPlayerRepository participants, SetPointRepository points, SetScoreService scores) {
+                                     MatchPlayerRepository participants, SetPointRepository points, SetScoreViewService scores) {
         this.matches = matches; this.sets = sets; this.replacements = replacements;
         this.participants = participants; this.points = points; this.scores = scores;
     }

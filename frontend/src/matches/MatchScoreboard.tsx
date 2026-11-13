@@ -1,17 +1,15 @@
 import { Alert, Badge, Button, Group, Paper, SimpleGrid, Skeleton, Stack, Text, Title } from '@mantine/core';
-import { notifications } from '@mantine/notifications';
 import { IconPlus, IconRefresh, IconArrowBackUp } from '@tabler/icons-react';
-import { useEffect, useRef, useState } from 'react';
-import { api, ApiError, errorMessage, type Match, type MatchPreparation, type MatchSet, type SetPoint, type SetScore } from '../api/client';
+import { useEffect, useState } from 'react';
+import type { Match, MatchPreparation, MatchSet } from '../api/client';
 import { SetCourtView } from './SetCourtView';
 import { SetSubstitutions } from './SetSubstitutions';
 import { LiberoReplacements } from './LiberoReplacements';
 import { PointDetailsForm } from './PointDetailsForm';
 import { pointActionLabels, pointPlayerLabel } from './pointDetails';
 import { MatchStatisticsPanel } from './MatchStatisticsPanel';
-import { useLiveRefresh } from './useLiveRefresh';
 import { LiveRefreshNotice } from './LiveRefreshNotice';
-import { executeMatchCommand, type MatchCommand } from './commands';
+import { useMatchScore } from './useMatchScore';
 
 const time = (value: string) => new Intl.DateTimeFormat('sr-Latn-RS', {
   hour: '2-digit', minute: '2-digit', second: '2-digit',
@@ -21,88 +19,20 @@ export function MatchScoreboard({ match, set, canManage, onBusyChange, onSetFini
   match: Match; set: MatchSet; canManage: boolean; onBusyChange: (busy: boolean) => void;
   onSetFinished?: (result: MatchPreparation) => void;
 }) {
-  const [score, setScore] = useState<SetScore | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [attempt, setAttempt] = useState(0);
-  const [loadError, setLoadError] = useState('');
-  const [writeError, setWriteError] = useState('');
-  const [busy, setBusy] = useState(false);
-  const writing = useRef(false);
-  const [pending, setPending] = useState<MatchCommand | null>(null);
-  const [confirming, setConfirming] = useState<SetPoint | null>(null);
-  const [confirmFinish, setConfirmFinish] = useState(false);
+  const { score, loading, loadError, writeError, busy, pending, confirming, setConfirming,
+    confirmFinish, setConfirmFinish, liveEnabled, live, refresh, execute } = useMatchScore(match, set, canManage, onSetFinished);
   const [substitutionEditing, setSubstitutionEditing] = useState(false);
   const [liberoEditing, setLiberoEditing] = useState(false);
   const [pointEditing, setPointEditing] = useState(false);
   useEffect(() => { onBusyChange(busy || substitutionEditing || liberoEditing || pointEditing); }, [busy, substitutionEditing, liberoEditing, pointEditing, onBusyChange]);
   useEffect(() => () => onBusyChange(false), [onBusyChange]);
 
-  useEffect(() => {
-    const controller = new AbortController();
-    setLoading(true); setLoadError('');
-    api.setScore(match.id, set.id, controller.signal).then((result) => {
-      if (!controller.signal.aborted) {
-        setScore(result); setPending(null); setWriteError(''); setConfirming(null); setConfirmFinish(false);
-      }
-    }).catch((failure) => { if (!controller.signal.aborted) setLoadError(errorMessage(failure)); })
-      .finally(() => { if (!controller.signal.aborted) setLoading(false); });
-    return () => controller.abort();
-  }, [match.id, set.id, attempt]);
-
-  const liveEnabled = !canManage && !loading && match.status === 'LIVE' && (score?.setStatus ?? set.status) === 'LIVE';
-  const live = useLiveRefresh(liveEnabled, match.id + ':' + set.id + ':' + attempt, async (signal) => {
-    const result = await api.setScore(match.id, set.id, signal);
-    if (signal.aborted) return;
-    setScore((previous) => previous && previous.version > result.version ? previous : result);
-    setLoadError('');
-  });
-
   const teamName = (teamId: string) => teamId === match.homeTeam.id ? match.homeTeam.name : match.awayTeam.name;
-  function refresh() {
-    if (writing.current) return;
-    setConfirming(null); setConfirmFinish(false); setAttempt((value) => value + 1);
-  }
-  async function execute(command: MatchCommand) {
-    if (writing.current || loading || !canManage) return;
-    writing.current = true; setBusy(true); setWriteError('');
-    try {
-      const outcome = await executeMatchCommand(match.id, set.id, command);
-      if (outcome.kind === 'finish') {
-        const result = outcome.preparation;
-        const finished = result.sets.find((entry) => entry.id === set.id);
-        if (finished) setScore((current) => current && ({ ...current, version: finished.scoreVersion,
-          homeScore: finished.homeScore, awayScore: finished.awayScore, setStatus: finished.status,
-          matchStatus: result.roster.match.status, canRecord: false, canUndo: false, canFinish: false, winnerTeamId: finished.winnerTeamId,
-          court: current.court && { ...current.court, servingTeamId: null, server: null } }));
-        setPending(null); setConfirmFinish(false); onSetFinished?.(result);
-        notifications.show({ title: 'Set je završen', message: 'Konačan rezultat je sačuvan.', color: 'teal', role: 'status' });
-        return;
-      }
-      setScore(outcome.score); setPending(null); setConfirming(null);
-      if (command.kind === 'undo') notifications.show({
-        title: 'Poen je poništen', message: 'Rezultat je ažuriran. Unos ostaje vidljiv u istoriji.', color: 'teal', role: 'status',
-      });
-      if (command.kind === 'substitute' || command.kind === 'undoSubstitution') notifications.show({
-        title: command.kind === 'substitute' ? 'Izmena je sačuvana' : 'Izmena je poništena',
-        message: 'Raspored igrača je ažuriran.', color: 'teal', role: 'status',
-      });
-      if (command.kind === 'libero' || command.kind === 'undoLibero') notifications.show({
-        title: command.kind === 'libero' ? 'Zamena libera je sačuvana' : 'Zamena libera je poništena',
-        message: 'Raspored igrača je ažuriran.', color: 'violet', role: 'status',
-      });
-    } catch (failure) {
-      setWriteError(errorMessage(failure)); setConfirming(null); setConfirmFinish(false);
-      // Network/5xx failures may happen after a committed write. Retrying must keep the same command ID.
-      setPending(!(failure instanceof ApiError) || failure.status >= 500 ? command : null);
-    } finally {
-      writing.current = false; setBusy(false);
-    }
-  }
   const editable = canManage && !!score && (score.canRecord || score.canUndo || score.canFinish);
   const unavailable = busy || loading || !!loadError || !!writeError || !!pending || !!confirming || confirmFinish;
   const blocked = unavailable || substitutionEditing || liberoEditing || pointEditing;
   function add(teamId: string) {
-    if (!score?.canRecord || !editable || blocked || writing.current) return;
+    if (!score?.canRecord || !editable || blocked) return;
     void execute({ kind: 'add', requestId: crypto.randomUUID(), version: score.version, scoringTeamId: teamId });
   }
 
@@ -150,7 +80,7 @@ export function MatchScoreboard({ match, set, canManage, onBusyChange, onSetFini
             <Group mt="sm">
               <Button variant="default" size="xs" disabled={busy} onClick={() => setConfirming(null)}>Odustani</Button>
               <Button color="red" size="xs" loading={busy} onClick={() => {
-                if (!score || writing.current) return;
+                if (!score) return;
                 void execute({ kind: 'undo', requestId: crypto.randomUUID(), version: score.version, pointId: confirming.id });
               }}>Potvrdi poništavanje</Button>
             </Group>
@@ -163,7 +93,6 @@ export function MatchScoreboard({ match, set, canManage, onBusyChange, onSetFini
             {confirmFinish ? <Group>
               <Button variant="default" size="xs" disabled={busy} onClick={() => setConfirmFinish(false)}>Odustani od završavanja</Button>
               <Button color="teal" size="xs" loading={busy} onClick={() => {
-                if (writing.current) return;
                 void execute({ kind: 'finish', requestId: crypto.randomUUID(), version: score.version });
               }}>Potvrdi kraj seta</Button>
             </Group> : <Button w="fit-content" color="teal" disabled={blocked} onClick={() => setConfirmFinish(true)}>Završi set</Button>}
